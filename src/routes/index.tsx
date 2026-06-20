@@ -103,8 +103,17 @@ function Game() {
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
+    // 1x1 transparent fallback used when an asset fails to load (e.g. assets that only
+    // resolve inside the Lovable editor's own preview infra and aren't reachable from
+    // an independently-hosted build). Drawing it is a harmless no-op.
+    const blankImg = new Image();
+    blankImg.src =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
     const load = (src: string) => new Promise<HTMLImageElement>(res => {
-      const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.src = src;
+      const i = new Image(); i.crossOrigin = "anonymous";
+      i.onload = () => res(i);
+      i.onerror = () => res(blankImg);
+      i.src = src;
     });
 
     let raf = 0;
