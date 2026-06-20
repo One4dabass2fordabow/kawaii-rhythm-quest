@@ -439,7 +439,7 @@ function Game() {
             if (collidesRect(pb2, bb) && player.invuln === 0) {
               if (player.vy > 2 && player.y + player.h < bossObj.y + 80) {
                 if (bossObj.hitFlash === 0) {
-                  bossObj.hp--; bossObj.hitFlash = 20; score += 200;
+                  bossObj.hp--; bossObj.hitFlash = 20; score += 200; bossObj.everHit = true;
                   if (bossObj.hp <= 0) { bossObj.alive = false; gameState = "win"; }
                 }
                 player.vy = -12;
