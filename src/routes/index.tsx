@@ -224,6 +224,7 @@ function Game() {
       const bossObj = {
         x: bossX, y: 220, vx: 0, vy: 0, w: 220, h: 320,
         hp: 10, onGround: false, jumpTimer: 60, attackTimer: 120, hitFlash: 0, alive: true,
+        everHit: false,
       };
 
       const bows: Bow[] = [];
