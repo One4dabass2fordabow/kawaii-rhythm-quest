@@ -804,10 +804,14 @@ function Game() {
     };
   }, [level]);
 
+  const startLevel = (n: 1 | 2) => {
+    setUi({ life: 3, stars: 0, score: 0, bossHp: 10, gameState: "play", musicOn: false });
+    setLevel(n);
+  };
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4 p-4" style={{background:"linear-gradient(180deg,#2a1810,#5a3a1a)"}}>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4 p-4" style={{background: level === 1 ? "linear-gradient(180deg,#2a1810,#5a3a1a)" : "linear-gradient(180deg,#1a1030,#3a1a55)"}}>
       <h1 className="text-3xl font-bold text-amber-200 drop-shadow" style={{fontFamily:"serif"}}>
-        Contrebasse Quest — Desert Symphony
+        {level === 1 ? "Contrebasse Quest — Desert Symphony" : "Contrebasse Quest — Niveau 2 : Jazz Club"}
       </h1>
       <div className="relative" style={{width: W, maxWidth: "100%"}}>
         <canvas ref={canvasRef} width={W} height={H} className="rounded-lg shadow-2xl border-4 border-amber-700 w-full" style={{imageRendering:"auto"}} />
@@ -820,12 +824,38 @@ function Game() {
       <div className="text-amber-100/80 text-sm text-center max-w-2xl">
         ← → se déplacer · ↑ sauter (↑↑ double saut) · ESPACE coup d'archet · ESPACE maintenu → lance l'archet en boomerang · sauter sur les ennemis pour les écraser
       </div>
-      <button
-        onClick={() => ui.musicOn ? musicCtrl.current?.stop() : musicCtrl.current?.start()}
-        className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-amber-50 font-semibold shadow"
-      >
-        {ui.musicOn ? "♪ Couper la musique" : "♪ Lancer la musique du désert"}
-      </button>
+      <div className="flex gap-3 flex-wrap justify-center">
+        <button
+          onClick={() => ui.musicOn ? musicCtrl.current?.stop() : musicCtrl.current?.start()}
+          className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-amber-50 font-semibold shadow"
+        >
+          {ui.musicOn ? "♪ Couper la musique" : "♪ Lancer la musique"}
+        </button>
+        {level === 1 && ui.gameState === "win" && (
+          <button
+            onClick={() => startLevel(2)}
+            className="px-4 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-amber-50 font-semibold shadow"
+          >
+            ▶ Niveau 2 — Jazz Club
+          </button>
+        )}
+        {level === 2 && (
+          <button
+            onClick={() => startLevel(1)}
+            className="px-4 py-2 rounded-lg bg-amber-900 hover:bg-amber-800 text-amber-50 font-semibold shadow"
+          >
+            ◀ Retour Niveau 1
+          </button>
+        )}
+        {level === 1 && ui.gameState !== "win" && (
+          <button
+            onClick={() => startLevel(2)}
+            className="px-4 py-2 rounded-lg bg-purple-800 hover:bg-purple-700 text-amber-50 font-semibold shadow opacity-80"
+          >
+            Aller au Niveau 2
+          </button>
+        )}
+      </div>
     </div>
   );
 }
