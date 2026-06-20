@@ -51,9 +51,34 @@ function Game() {
 
       // World
       const player = {
-        x: 100, y: 300, vx: 0, vy: 0, w: 80, h: 110,
+        x: 100, y: 100, vx: 0, vy: 0, w: 160, h: 220,
         onGround: false, jumps: 0, facing: 1,
         attackTimer: 0, invuln: 0, swordSwing: 0,
+      };
+
+      // WebAudio - fausse contrebasse (out-of-tune double bass) on hit
+      let audioCtx: AudioContext | null = null;
+      const playBassHit = () => {
+        try {
+          if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const ctx2 = audioCtx;
+          const now = ctx2.currentTime;
+          // two slightly detuned low notes that wobble
+          [55, 58.3].forEach((f, idx) => {
+            const osc = ctx2.createOscillator();
+            const gain = ctx2.createGain();
+            osc.type = "sawtooth";
+            osc.frequency.setValueAtTime(f, now);
+            osc.frequency.linearRampToValueAtTime(f * 0.85, now + 0.6);
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.35, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+            const filter = ctx2.createBiquadFilter();
+            filter.type = "lowpass"; filter.frequency.value = 600;
+            osc.connect(filter); filter.connect(gain); gain.connect(ctx2.destination);
+            osc.start(now + idx * 0.03); osc.stop(now + 0.75);
+          });
+        } catch {}
       };
 
       const platforms: Platform[] = [
