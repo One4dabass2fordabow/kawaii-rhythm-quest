@@ -4,8 +4,14 @@ import heroImg from "@/assets/hero.png";
 import enemyImg from "@/assets/enemy.png";
 import bossImg from "@/assets/boss.png";
 import bgImg from "@/assets/background.png";
+import bg2Asset from "@/assets/background2.png.asset.json";
+import enemy2GroundAsset from "@/assets/enemy2-ground.png.asset.json";
+import enemy2FlyAsset from "@/assets/enemy2-fly.png.asset.json";
+import boss2Asset from "@/assets/boss2.png.asset.json";
 import levelMusicAsset from "@/assets/level-music.mp3.asset.json";
 import bossMusicAsset from "@/assets/boss-music.mp3.asset.json";
+import level2MusicAsset from "@/assets/level2-music.mp3.asset.json";
+import boss2MusicAsset from "@/assets/boss2-music.mp3.asset.json";
 
 
 export const Route = createFileRoute("/")({
