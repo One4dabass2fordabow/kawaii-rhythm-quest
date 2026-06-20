@@ -602,7 +602,8 @@ function Game() {
           if (bx + bossObj.w > -50 && bx < W+50) {
             ctx.save();
             if (bossObj.hitFlash > 0 && Math.floor(bossObj.hitFlash/3)%2===0) ctx.globalAlpha = 0.4;
-            ctx.drawImage(boss, bx, bossObj.y, bossObj.w, bossObj.h);
+            const bossSprite = boss2Sprite ?? boss;
+            ctx.drawImage(bossSprite, bx, bossObj.y, bossObj.w, bossObj.h);
             ctx.restore();
           }
         }
@@ -618,17 +619,34 @@ function Game() {
           ctx.restore();
         }
 
-        // Enemies: recolored sprite + tilt
+        // Enemies
         for (const e of enemies) {
           if (!e.alive) continue;
           const x = e.x - camX;
           if (x + e.w < -100 || x > W + 100) continue;
-          const angle = e.vx >= 0 ? Math.PI/2 : -Math.PI/2;
-          const sprite = enemySprites[e.tint];
           ctx.save();
-          ctx.translate(x + e.w/2, e.y + e.h/2);
-          ctx.rotate(angle);
-          ctx.drawImage(sprite, -e.w/2, -e.h/2, e.w, e.h);
+          if (e.kind === "violin") {
+            // Flying violin-crows: tilt 90° in direction of travel
+            const angle = e.vx >= 0 ? Math.PI/2 : -Math.PI/2;
+            ctx.translate(x + e.w/2, e.y + e.h/2);
+            ctx.rotate(angle);
+            ctx.drawImage(enemySprites[e.tint], -e.w/2, -e.h/2, e.w, e.h);
+          } else if (e.kind === "snake") {
+            // Ground snake: flip horizontally based on facing
+            if (e.vx < 0) {
+              ctx.translate(x + e.w, e.y);
+              ctx.scale(-1, 1);
+              ctx.drawImage(enemy2GroundSprite, 0, 0, e.w, e.h);
+            } else {
+              ctx.drawImage(enemy2GroundSprite, x, e.y, e.w, e.h);
+            }
+          } else {
+            // Silver U flying enemy: gentle tilt depending on direction
+            const tilt = e.vx >= 0 ? 0.25 : -0.25;
+            ctx.translate(x + e.w/2, e.y + e.h/2);
+            ctx.rotate(tilt);
+            ctx.drawImage(enemy2FlySprite, -e.w/2, -e.h/2, e.w, e.h);
+          }
           ctx.restore();
         }
 
