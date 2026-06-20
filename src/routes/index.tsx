@@ -460,10 +460,10 @@ function Game() {
 
           if (life <= 0) gameState = "lose";
 
-          // Music switch when boss arrives
+          // Music switch: boss music only after the player has actually struck the boss
           if (musicEnabled) {
-            if (bossObj.alive && score >= 20000) playTrack("boss");
-            else if (!bossObj.alive || score < 20000) playTrack("level");
+            if (bossObj.alive && bossObj.everHit) playTrack("boss");
+            else playTrack("level");
           }
         }
 
