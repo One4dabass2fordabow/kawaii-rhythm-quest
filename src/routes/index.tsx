@@ -233,10 +233,17 @@ function Game() {
       const keys: Record<string, boolean> = {};
       let spaceHoldStart = 0;
       let spaceFired = false;
+      let musicAutoStarted = false;
       const SPACE_LONG_MS = 250;
 
       const downKey = (e: KeyboardEvent) => {
         if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
+        // Auto-start level music on first gameplay key press
+        if (!musicAutoStarted && ["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) {
+          musicAutoStarted = true;
+          startMusic();
+          setUi(u => ({...u, musicOn: true}));
+        }
         if (e.key === "ArrowUp" && !keys.ArrowUp) {
           if (player.onGround) { player.vy = -13; player.jumps = 1; player.onGround = false; }
           else if (player.jumps < 2) { player.vy = -11; player.jumps = 2; }
