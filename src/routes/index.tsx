@@ -249,11 +249,30 @@ function Game() {
       const enemies: Enemy[] = [];
       for (let i = 0; i < 22; i++) {
         const ex = 500 + i * (LEVEL_W - 1200) / 22 + Math.random()*80;
-        const ey = 140 + Math.random()*120;
+        // Level 1: all flying violin-crows.
+        // Level 2: alternate ground snakes (walk along the ground) and flying silver U's.
+        let kind: "violin" | "snake" | "silver";
+        let isFlying: boolean;
+        let ey: number;
+        let w: number, h: number;
+        if (level === 1) {
+          kind = "violin"; isFlying = true;
+          ey = 140 + Math.random()*120;
+          w = 70; h = 100;
+        } else if (i % 2 === 0) {
+          kind = "snake"; isFlying = false;
+          ey = 480 - 110; // standing on the ground
+          w = 90; h = 110;
+        } else {
+          kind = "silver"; isFlying = true;
+          ey = 140 + Math.random()*140;
+          w = 80; h = 110;
+        }
         enemies.push({
           x: ex, y: ey, vx: 0.6 * (Math.random()<0.5?-1:1), vy: 0,
           baseY: ey, patrolMin: ex - 140, patrolMax: ex + 140,
-          state: "patrol", tint: tints[i % 3], hp: 1, alive: true, w: 70, h: 100,
+          state: "patrol", tint: tints[i % 3], hp: 1, alive: true, w, h,
+          kind, isFlying,
         });
       }
 
