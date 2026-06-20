@@ -453,10 +453,9 @@ function Game() {
           ctx.fillStyle = "#e63946"; ctx.fillRect(W/2-148, 52, 296*(bossObj.hp/10), 16);
           ctx.fillStyle = "#fff"; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center";
           ctx.fillText("BOSS MÉTRONOME", W/2, 45); ctx.textAlign = "left";
-        } else if (!bossObj.alive ? false : true) {
-          // hint
+        } else if (score < 20000) {
           ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "right";
-          ctx.fillText(`Boss à 20 000 pts (${Math.max(0,20000-score)} restants)`, W-12, H-12);
+          ctx.fillText(`Boss à 20 000 pts (${20000-score} restants)`, W-12, H-12);
           ctx.textAlign = "left";
         }
 
@@ -508,7 +507,7 @@ function Game() {
           allow="autoplay"
           scrolling="no"
           frameBorder="no"
-          src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/les-chiens-aboient&color=%23d97706&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false"
+          src="https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fmathieu-verlot%2Fles-chiens-aboient&color=%23d97706&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false"
         />
         <div className="text-amber-100/60 text-xs text-center mt-1">
           ♪ Bande son : <a className="underline" href="https://soundcloud.com/mathieu-verlot/les-chiens-aboient" target="_blank" rel="noreferrer">Les chiens aboient — Mathieu Verlot</a>
