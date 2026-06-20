@@ -783,7 +783,11 @@ function Game() {
           ctx.fillStyle = "#ffd84d"; ctx.font = "bold 64px serif"; ctx.textAlign = "center";
           ctx.fillText(gameState === "win" ? "VICTOIRE !" : "GAME OVER", W/2, H/2);
           ctx.fillStyle = "#fff"; ctx.font = "20px sans-serif";
-          ctx.fillText("Recharge la page pour rejouer", W/2, H/2+40);
+          if (gameState === "win" && level === 1) {
+            ctx.fillText("Niveau 1 terminé — direction le club de jazz !", W/2, H/2+40);
+          } else {
+            ctx.fillText("Recharge la page pour rejouer", W/2, H/2+40);
+          }
           ctx.textAlign = "left";
         }
 
@@ -798,7 +802,7 @@ function Game() {
       cancelAnimationFrame(raf);
       if (musicCtrl.current) musicCtrl.current.stop();
     };
-  }, []);
+  }, [level]);
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4 p-4" style={{background:"linear-gradient(180deg,#2a1810,#5a3a1a)"}}>
