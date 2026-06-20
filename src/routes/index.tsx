@@ -95,6 +95,7 @@ function recolorEnemy(src: HTMLImageElement, headColor: [number,number,number], 
 
 function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [level, setLevel] = useState<1 | 2>(1);
   const [ui, setUi] = useState({ life: 3, stars: 0, score: 0, bossHp: 10, gameState: "play" as "play"|"win"|"lose", musicOn: false });
   const musicCtrl = useRef<{start: () => void; stop: () => void} | null>(null);
 
@@ -102,21 +103,38 @@ function Game() {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const load = (src: string) => new Promise<HTMLImageElement>(res => {
-      const i = new Image(); i.onload = () => res(i); i.src = src;
+      const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.src = src;
     });
 
     let raf = 0;
     let stopped = false;
 
     (async () => {
-      const [hero, enemy, boss, bg] = await Promise.all([load(heroImg), load(enemyImg), load(bossImg), load(bgImg)]);
+      const bgSrc = level === 1 ? bgImg : bg2Asset.url;
+      const bossSrc = level === 1 ? bossImg : boss2Asset.url;
+      const levelMusicUrl = level === 1 ? levelMusicAsset.url : level2MusicAsset.url;
+      const bossMusicUrl = level === 1 ? bossMusicAsset.url : boss2MusicAsset.url;
 
-      // Pre-recolored enemy variants
+      const [hero, enemy, boss, bg, enemy2Ground, enemy2Fly] = await Promise.all([
+        load(heroImg),
+        load(enemyImg),
+        load(bossSrc),
+        load(bgSrc),
+        load(enemy2GroundAsset.url),
+        load(enemy2FlyAsset.url),
+      ]);
+
+      // Pre-recolored level 1 enemy variants
       const enemySprites: Record<"yellow"|"red"|"black", HTMLCanvasElement> = {
         yellow: recolorEnemy(enemy, [230, 190, 40],  [255, 215, 70]),
         red:    recolorEnemy(enemy, [170, 25, 25],   [220, 50, 50]),
         black:  recolorEnemy(enemy, [20, 20, 20],    [55, 55, 60]),
       };
+
+      // Level 2 sprites: strip white background
+      const enemy2GroundSprite = removeWhiteBg(enemy2Ground);
+      const enemy2FlySprite    = removeWhiteBg(enemy2Fly);
+      const boss2Sprite        = level === 2 ? removeWhiteBg(boss) : null;
 
       const player = {
         x: 100, y: 100, vx: 0, vy: 0, w: 160, h: 220,
