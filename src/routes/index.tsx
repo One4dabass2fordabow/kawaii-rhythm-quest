@@ -4,8 +4,14 @@ import heroImg from "@/assets/hero.png";
 import enemyImg from "@/assets/enemy.png";
 import bossImg from "@/assets/boss.png";
 import bgImg from "@/assets/background.png";
+import bg2Asset from "@/assets/background2.png.asset.json";
+import enemy2GroundAsset from "@/assets/enemy2-ground.png.asset.json";
+import enemy2FlyAsset from "@/assets/enemy2-fly.png.asset.json";
+import boss2Asset from "@/assets/boss2.png.asset.json";
 import levelMusicAsset from "@/assets/level-music.mp3.asset.json";
 import bossMusicAsset from "@/assets/boss-music.mp3.asset.json";
+import level2MusicAsset from "@/assets/level2-music.mp3.asset.json";
+import boss2MusicAsset from "@/assets/boss2-music.mp3.asset.json";
 
 
 export const Route = createFileRoute("/")({
@@ -23,6 +29,7 @@ type Enemy = {
   baseY: number; patrolMin: number; patrolMax: number;
   state: "patrol" | "dive"; tint: "yellow" | "red" | "black";
   hp: number; alive: boolean; w: number; h: number;
+  kind: "violin" | "snake" | "silver"; isFlying: boolean;
 };
 type Platform = { x: number; y: number; w: number; h: number };
 type Note = { x: number; y: number; collected: boolean; phase: number };
@@ -32,6 +39,28 @@ type BossProj = { x: number; y: number; vx: number; vy: number; t: number };
 const W = 960, H = 540;
 const GRAVITY = 0.7;
 const LEVEL_W = 9600;
+
+// Remove white/near-white background from a sprite (for the level 2 art that has white bg).
+function removeWhiteBg(src: HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const cx = c.getContext("2d")!;
+  cx.drawImage(src, 0, 0);
+  const img = cx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    const min = Math.min(r,g,b);
+    // Strong white → transparent; near-white → partial alpha for soft edges
+    if (min > 240 && Math.abs(r-g) < 12 && Math.abs(g-b) < 12) {
+      d[i+3] = 0;
+    } else if (min > 215 && Math.abs(r-g) < 18 && Math.abs(g-b) < 18) {
+      d[i+3] = Math.round((255 - min) * 8);
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  return c;
+}
 
 // Recolor an image into a new canvas: replace black-ish pixels and blue-ish (violin body) pixels with target colors.
 function recolorEnemy(src: HTMLImageElement, headColor: [number,number,number], bodyColor: [number,number,number]): HTMLCanvasElement {
@@ -67,6 +96,7 @@ function recolorEnemy(src: HTMLImageElement, headColor: [number,number,number], 
 
 function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [level, setLevel] = useState<1 | 2>(1);
   const [ui, setUi] = useState({ life: 3, stars: 0, score: 0, bossHp: 10, gameState: "play" as "play"|"win"|"lose", musicOn: false });
   const musicCtrl = useRef<{start: () => void; stop: () => void} | null>(null);
 
@@ -74,21 +104,38 @@ function Game() {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const load = (src: string) => new Promise<HTMLImageElement>(res => {
-      const i = new Image(); i.onload = () => res(i); i.src = src;
+      const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.src = src;
     });
 
     let raf = 0;
     let stopped = false;
 
     (async () => {
-      const [hero, enemy, boss, bg] = await Promise.all([load(heroImg), load(enemyImg), load(bossImg), load(bgImg)]);
+      const bgSrc = level === 1 ? bgImg : bg2Asset.url;
+      const bossSrc = level === 1 ? bossImg : boss2Asset.url;
+      const levelMusicUrl = level === 1 ? levelMusicAsset.url : level2MusicAsset.url;
+      const bossMusicUrl = level === 1 ? bossMusicAsset.url : boss2MusicAsset.url;
 
-      // Pre-recolored enemy variants
+      const [hero, enemy, boss, bg, enemy2Ground, enemy2Fly] = await Promise.all([
+        load(heroImg),
+        load(enemyImg),
+        load(bossSrc),
+        load(bgSrc),
+        load(enemy2GroundAsset.url),
+        load(enemy2FlyAsset.url),
+      ]);
+
+      // Pre-recolored level 1 enemy variants
       const enemySprites: Record<"yellow"|"red"|"black", HTMLCanvasElement> = {
         yellow: recolorEnemy(enemy, [230, 190, 40],  [255, 215, 70]),
         red:    recolorEnemy(enemy, [170, 25, 25],   [220, 50, 50]),
         black:  recolorEnemy(enemy, [20, 20, 20],    [55, 55, 60]),
       };
+
+      // Level 2 sprites: strip white background
+      const enemy2GroundSprite = removeWhiteBg(enemy2Ground);
+      const enemy2FlySprite    = removeWhiteBg(enemy2Fly);
+      const boss2Sprite        = level === 2 ? removeWhiteBg(boss) : null;
 
       const player = {
         x: 100, y: 100, vx: 0, vy: 0, w: 160, h: 220,
@@ -143,9 +190,9 @@ function Game() {
       };
 
       // Music: real MP3 tracks, switch when boss appears
-      const levelAudio = new Audio(levelMusicAsset.url);
+      const levelAudio = new Audio(levelMusicUrl);
       levelAudio.loop = true; levelAudio.volume = 0.55;
-      const bossAudio = new Audio(bossMusicAsset.url);
+      const bossAudio = new Audio(bossMusicUrl);
       bossAudio.loop = true; bossAudio.volume = 0.65;
       let currentTrack: "level" | "boss" | null = null;
       let musicEnabled = false;
@@ -202,11 +249,30 @@ function Game() {
       const enemies: Enemy[] = [];
       for (let i = 0; i < 22; i++) {
         const ex = 500 + i * (LEVEL_W - 1200) / 22 + Math.random()*80;
-        const ey = 140 + Math.random()*120;
+        // Level 1: all flying violin-crows.
+        // Level 2: alternate ground snakes (walk along the ground) and flying silver U's.
+        let kind: "violin" | "snake" | "silver";
+        let isFlying: boolean;
+        let ey: number;
+        let w: number, h: number;
+        if (level === 1) {
+          kind = "violin"; isFlying = true;
+          ey = 140 + Math.random()*120;
+          w = 70; h = 100;
+        } else if (i % 2 === 0) {
+          kind = "snake"; isFlying = false;
+          ey = 480 - 110; // standing on the ground
+          w = 90; h = 110;
+        } else {
+          kind = "silver"; isFlying = true;
+          ey = 140 + Math.random()*140;
+          w = 80; h = 110;
+        }
         enemies.push({
           x: ex, y: ey, vx: 0.6 * (Math.random()<0.5?-1:1), vy: 0,
           baseY: ey, patrolMin: ex - 140, patrolMax: ex + 140,
-          state: "patrol", tint: tints[i % 3], hp: 1, alive: true, w: 70, h: 100,
+          state: "patrol", tint: tints[i % 3], hp: 1, alive: true, w, h,
+          kind, isFlying,
         });
       }
 
@@ -333,11 +399,11 @@ function Game() {
             const dy = (player.y + player.h/2) - (e.y + e.h/2);
             const dist = Math.hypot(dx, dy);
             if (e.state === "patrol") {
-              e.y = e.baseY + Math.sin(tick*0.04 + e.x)*8;
+              if (e.isFlying) e.y = e.baseY + Math.sin(tick*0.04 + e.x)*8;
               e.x += e.vx;
               if (e.x < e.patrolMin) e.vx = Math.abs(e.vx);
               if (e.x > e.patrolMax) e.vx = -Math.abs(e.vx);
-              if (dist < 220 && player.y > e.y) {
+              if (e.isFlying && dist < 220 && player.y > e.y) {
                 e.state = "dive";
                 e.vx = Math.sign(dx) * 1.8;
                 e.vy = 2.4;
@@ -536,7 +602,8 @@ function Game() {
           if (bx + bossObj.w > -50 && bx < W+50) {
             ctx.save();
             if (bossObj.hitFlash > 0 && Math.floor(bossObj.hitFlash/3)%2===0) ctx.globalAlpha = 0.4;
-            ctx.drawImage(boss, bx, bossObj.y, bossObj.w, bossObj.h);
+            const bossSprite = boss2Sprite ?? boss;
+            ctx.drawImage(bossSprite, bx, bossObj.y, bossObj.w, bossObj.h);
             ctx.restore();
           }
         }
@@ -552,17 +619,34 @@ function Game() {
           ctx.restore();
         }
 
-        // Enemies: recolored sprite + tilt
+        // Enemies
         for (const e of enemies) {
           if (!e.alive) continue;
           const x = e.x - camX;
           if (x + e.w < -100 || x > W + 100) continue;
-          const angle = e.vx >= 0 ? Math.PI/2 : -Math.PI/2;
-          const sprite = enemySprites[e.tint];
           ctx.save();
-          ctx.translate(x + e.w/2, e.y + e.h/2);
-          ctx.rotate(angle);
-          ctx.drawImage(sprite, -e.w/2, -e.h/2, e.w, e.h);
+          if (e.kind === "violin") {
+            // Flying violin-crows: tilt 90° in direction of travel
+            const angle = e.vx >= 0 ? Math.PI/2 : -Math.PI/2;
+            ctx.translate(x + e.w/2, e.y + e.h/2);
+            ctx.rotate(angle);
+            ctx.drawImage(enemySprites[e.tint], -e.w/2, -e.h/2, e.w, e.h);
+          } else if (e.kind === "snake") {
+            // Ground snake: flip horizontally based on facing
+            if (e.vx < 0) {
+              ctx.translate(x + e.w, e.y);
+              ctx.scale(-1, 1);
+              ctx.drawImage(enemy2GroundSprite, 0, 0, e.w, e.h);
+            } else {
+              ctx.drawImage(enemy2GroundSprite, x, e.y, e.w, e.h);
+            }
+          } else {
+            // Silver U flying enemy: gentle tilt depending on direction
+            const tilt = e.vx >= 0 ? 0.25 : -0.25;
+            ctx.translate(x + e.w/2, e.y + e.h/2);
+            ctx.rotate(tilt);
+            ctx.drawImage(enemy2FlySprite, -e.w/2, -e.h/2, e.w, e.h);
+          }
           ctx.restore();
         }
 
@@ -699,7 +783,11 @@ function Game() {
           ctx.fillStyle = "#ffd84d"; ctx.font = "bold 64px serif"; ctx.textAlign = "center";
           ctx.fillText(gameState === "win" ? "VICTOIRE !" : "GAME OVER", W/2, H/2);
           ctx.fillStyle = "#fff"; ctx.font = "20px sans-serif";
-          ctx.fillText("Recharge la page pour rejouer", W/2, H/2+40);
+          if (gameState === "win" && level === 1) {
+            ctx.fillText("Niveau 1 terminé — direction le club de jazz !", W/2, H/2+40);
+          } else {
+            ctx.fillText("Recharge la page pour rejouer", W/2, H/2+40);
+          }
           ctx.textAlign = "left";
         }
 
@@ -714,12 +802,16 @@ function Game() {
       cancelAnimationFrame(raf);
       if (musicCtrl.current) musicCtrl.current.stop();
     };
-  }, []);
+  }, [level]);
 
+  const startLevel = (n: 1 | 2) => {
+    setUi({ life: 3, stars: 0, score: 0, bossHp: 10, gameState: "play", musicOn: false });
+    setLevel(n);
+  };
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4 p-4" style={{background:"linear-gradient(180deg,#2a1810,#5a3a1a)"}}>
+    <div className="min-h-screen w-full flex flex-col items-center justify-center gap-4 p-4" style={{background: level === 1 ? "linear-gradient(180deg,#2a1810,#5a3a1a)" : "linear-gradient(180deg,#1a1030,#3a1a55)"}}>
       <h1 className="text-3xl font-bold text-amber-200 drop-shadow" style={{fontFamily:"serif"}}>
-        Contrebasse Quest — Desert Symphony
+        {level === 1 ? "Contrebasse Quest — Desert Symphony" : "Contrebasse Quest — Niveau 2 : Jazz Club"}
       </h1>
       <div className="relative" style={{width: W, maxWidth: "100%"}}>
         <canvas ref={canvasRef} width={W} height={H} className="rounded-lg shadow-2xl border-4 border-amber-700 w-full" style={{imageRendering:"auto"}} />
@@ -732,12 +824,38 @@ function Game() {
       <div className="text-amber-100/80 text-sm text-center max-w-2xl">
         ← → se déplacer · ↑ sauter (↑↑ double saut) · ESPACE coup d'archet · ESPACE maintenu → lance l'archet en boomerang · sauter sur les ennemis pour les écraser
       </div>
-      <button
-        onClick={() => ui.musicOn ? musicCtrl.current?.stop() : musicCtrl.current?.start()}
-        className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-amber-50 font-semibold shadow"
-      >
-        {ui.musicOn ? "♪ Couper la musique" : "♪ Lancer la musique du désert"}
-      </button>
+      <div className="flex gap-3 flex-wrap justify-center">
+        <button
+          onClick={() => ui.musicOn ? musicCtrl.current?.stop() : musicCtrl.current?.start()}
+          className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-amber-50 font-semibold shadow"
+        >
+          {ui.musicOn ? "♪ Couper la musique" : "♪ Lancer la musique"}
+        </button>
+        {level === 1 && ui.gameState === "win" && (
+          <button
+            onClick={() => startLevel(2)}
+            className="px-4 py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-amber-50 font-semibold shadow"
+          >
+            ▶ Niveau 2 — Jazz Club
+          </button>
+        )}
+        {level === 2 && (
+          <button
+            onClick={() => startLevel(1)}
+            className="px-4 py-2 rounded-lg bg-amber-900 hover:bg-amber-800 text-amber-50 font-semibold shadow"
+          >
+            ◀ Retour Niveau 1
+          </button>
+        )}
+        {level === 1 && ui.gameState !== "win" && (
+          <button
+            onClick={() => startLevel(2)}
+            className="px-4 py-2 rounded-lg bg-purple-800 hover:bg-purple-700 text-amber-50 font-semibold shadow opacity-80"
+          >
+            Aller au Niveau 2
+          </button>
+        )}
+      </div>
     </div>
   );
 }
