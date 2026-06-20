@@ -23,21 +23,53 @@ type Enemy = {
 };
 type Platform = { x: number; y: number; w: number; h: number };
 type Note = { x: number; y: number; collected: boolean; phase: number };
-type Bow = { x: number; y: number; vx: number; t: number; active: boolean; returning: boolean };
+type Bow = { x: number; y: number; vx: number; t: number; active: boolean; returning: boolean; boomerang: boolean };
 type BossProj = { x: number; y: number; vx: number; vy: number; t: number };
 
 const W = 960, H = 540;
 const GRAVITY = 0.7;
-const LEVEL_W = 4800;
+const LEVEL_W = 9600;
+
+// Recolor an image into a new canvas: replace black-ish pixels and blue-ish (violin body) pixels with target colors.
+function recolorEnemy(src: HTMLImageElement, headColor: [number,number,number], bodyColor: [number,number,number]): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const cx = c.getContext("2d")!;
+  cx.drawImage(src, 0, 0);
+  const img = cx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2], a = d[i+3];
+    if (a < 10) continue;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    const lum = (r+g+b)/3;
+    // Dark / black areas → head color (keep luminance variations)
+    if (lum < 90 && max - min < 60) {
+      const k = lum / 90; // 0..1 shade
+      d[i]   = headColor[0] * k;
+      d[i+1] = headColor[1] * k;
+      d[i+2] = headColor[2] * k;
+    }
+    // Blue-ish violin body → body color
+    else if (b > r + 20 && b > g + 10) {
+      const k = Math.min(1, lum / 180);
+      d[i]   = bodyColor[0] * (0.4 + 0.6*k);
+      d[i+1] = bodyColor[1] * (0.4 + 0.6*k);
+      d[i+2] = bodyColor[2] * (0.4 + 0.6*k);
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  return c;
+}
 
 function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [ui, setUi] = useState({ life: 3, stars: 0, score: 0, bossHp: 10, gameState: "play" as "play"|"win"|"lose" });
+  const [ui, setUi] = useState({ life: 3, stars: 0, score: 0, bossHp: 10, gameState: "play" as "play"|"win"|"lose", musicOn: false });
+  const musicCtrl = useRef<{start: () => void; stop: () => void} | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
-    const images: Record<string, HTMLImageElement> = {};
     const load = (src: string) => new Promise<HTMLImageElement>(res => {
       const i = new Image(); i.onload = () => res(i); i.src = src;
     });
@@ -47,70 +79,188 @@ function Game() {
 
     (async () => {
       const [hero, enemy, boss, bg] = await Promise.all([load(heroImg), load(enemyImg), load(bossImg), load(bgImg)]);
-      images.hero = hero; images.enemy = enemy; images.boss = boss; images.bg = bg;
 
-      // World
+      // Pre-recolored enemy variants
+      const enemySprites: Record<"yellow"|"red"|"black", HTMLCanvasElement> = {
+        yellow: recolorEnemy(enemy, [230, 190, 40],  [255, 215, 70]),
+        red:    recolorEnemy(enemy, [170, 25, 25],   [220, 50, 50]),
+        black:  recolorEnemy(enemy, [20, 20, 20],    [55, 55, 60]),
+      };
+
       const player = {
         x: 100, y: 100, vx: 0, vy: 0, w: 160, h: 220,
         onGround: false, jumps: 0, facing: 1,
-        attackTimer: 0, invuln: 0, swordSwing: 0,
+        attackTimer: 0, invuln: 0, swingAnim: 0,
       };
 
-      // WebAudio - fausse contrebasse (out-of-tune double bass) on hit
+      // ===== Audio =====
       let audioCtx: AudioContext | null = null;
+      const ensureCtx = () => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume();
+        return audioCtx;
+      };
       const playBassHit = () => {
         try {
-          if (!audioCtx) audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-          const ctx2 = audioCtx;
-          const now = ctx2.currentTime;
-          // two slightly detuned low notes that wobble
+          const c2 = ensureCtx();
+          const now = c2.currentTime;
           [55, 58.3].forEach((f, idx) => {
-            const osc = ctx2.createOscillator();
-            const gain = ctx2.createGain();
+            const osc = c2.createOscillator();
+            const gain = c2.createGain();
             osc.type = "sawtooth";
             osc.frequency.setValueAtTime(f, now);
             osc.frequency.linearRampToValueAtTime(f * 0.85, now + 0.6);
             gain.gain.setValueAtTime(0.0001, now);
             gain.gain.exponentialRampToValueAtTime(0.35, now + 0.02);
             gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
-            const filter = ctx2.createBiquadFilter();
+            const filter = c2.createBiquadFilter();
             filter.type = "lowpass"; filter.frequency.value = 600;
-            osc.connect(filter); filter.connect(gain); gain.connect(ctx2.destination);
+            osc.connect(filter); filter.connect(gain); gain.connect(c2.destination);
             osc.start(now + idx * 0.03); osc.stop(now + 0.75);
           });
         } catch {}
       };
+      const playSwoosh = () => {
+        try {
+          const c2 = ensureCtx();
+          const now = c2.currentTime;
+          const osc = c2.createOscillator();
+          const gain = c2.createGain();
+          const filter = c2.createBiquadFilter();
+          filter.type = "bandpass"; filter.frequency.value = 1200; filter.Q.value = 2;
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(800, now);
+          osc.frequency.exponentialRampToValueAtTime(220, now + 0.18);
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+          osc.connect(filter); filter.connect(gain); gain.connect(c2.destination);
+          osc.start(now); osc.stop(now + 0.22);
+        } catch {}
+      };
 
+      // Procedural desert-music loop (oriental scale, bass + flute-like lead + percussive)
+      let musicNodes: { stop: () => void } | null = null;
+      const startMusic = () => {
+        if (musicNodes) return;
+        try {
+          const c2 = ensureCtx();
+          const master = c2.createGain();
+          master.gain.value = 0.18;
+          master.connect(c2.destination);
+
+          // Phrygian-dominant scale (desert flavor) in D
+          const scale = [146.83, 155.56, 196.00, 220.00, 233.08, 261.63, 311.13, 293.66];
+          const bassNotes = [73.42, 73.42, 98.00, 73.42, 73.42, 87.31, 98.00, 87.31];
+          let step = 0;
+          const noteLen = 0.42;
+
+          const lead = c2.createGain(); lead.gain.value = 0.22; lead.connect(master);
+          const bass = c2.createGain(); bass.gain.value = 0.35; bass.connect(master);
+          const drum = c2.createGain(); drum.gain.value = 0.5;  drum.connect(master);
+
+          const schedule = (when: number, idx: number) => {
+            // Lead (triangle, flute-ish)
+            const freq = scale[idx % scale.length];
+            const o = c2.createOscillator(); o.type = "triangle"; o.frequency.value = freq;
+            const g = c2.createGain();
+            g.gain.setValueAtTime(0.0001, when);
+            g.gain.exponentialRampToValueAtTime(0.4, when + 0.04);
+            g.gain.exponentialRampToValueAtTime(0.0001, when + noteLen * 0.9);
+            o.connect(g); g.connect(lead);
+            o.start(when); o.stop(when + noteLen);
+
+            // Bass every 2 steps
+            if (idx % 2 === 0) {
+              const bf = bassNotes[(idx/2) % bassNotes.length];
+              const bo = c2.createOscillator(); bo.type = "sawtooth"; bo.frequency.value = bf;
+              const bg = c2.createGain();
+              const bfil = c2.createBiquadFilter(); bfil.type = "lowpass"; bfil.frequency.value = 350;
+              bg.gain.setValueAtTime(0.0001, when);
+              bg.gain.exponentialRampToValueAtTime(0.55, when + 0.03);
+              bg.gain.exponentialRampToValueAtTime(0.0001, when + noteLen * 1.6);
+              bo.connect(bfil); bfil.connect(bg); bg.connect(bass);
+              bo.start(when); bo.stop(when + noteLen * 1.7);
+            }
+
+            // Percussion (tabla-ish) on every step
+            const buf = c2.createBuffer(1, c2.sampleRate * 0.12, c2.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+              data[i] = (Math.random()*2-1) * Math.pow(1 - i/data.length, 3);
+            }
+            const noise = c2.createBufferSource(); noise.buffer = buf;
+            const nf = c2.createBiquadFilter(); nf.type = "bandpass";
+            nf.frequency.value = idx % 4 === 0 ? 180 : 600;
+            nf.Q.value = 4;
+            const ng = c2.createGain(); ng.gain.value = idx % 4 === 0 ? 0.6 : 0.3;
+            noise.connect(nf); nf.connect(ng); ng.connect(drum);
+            noise.start(when);
+          };
+
+          let nextTime = c2.currentTime + 0.1;
+          let stopped2 = false;
+          const tickFn = () => {
+            if (stopped2) return;
+            while (nextTime < c2.currentTime + 0.5) {
+              schedule(nextTime, step);
+              step++;
+              nextTime += noteLen;
+            }
+            setTimeout(tickFn, 100);
+          };
+          tickFn();
+
+          musicNodes = {
+            stop: () => {
+              stopped2 = true;
+              try { master.gain.exponentialRampToValueAtTime(0.0001, c2.currentTime + 0.3); } catch {}
+              setTimeout(() => { try { master.disconnect(); } catch {} }, 500);
+            },
+          };
+        } catch {}
+      };
+      const stopMusic = () => {
+        if (musicNodes) { musicNodes.stop(); musicNodes = null; }
+      };
+      musicCtrl.current = {
+        start: () => { startMusic(); setUi(u => ({...u, musicOn: true})); },
+        stop:  () => { stopMusic();  setUi(u => ({...u, musicOn: false})); },
+      };
+
+      // ===== World (bigger level) =====
       const platforms: Platform[] = [
-        { x: 0, y: 480, w: LEVEL_W, h: 60 }, // ground
-        { x: 400, y: 380, w: 180, h: 24 },
-        { x: 650, y: 320, w: 160, h: 24 },
-        { x: 900, y: 380, w: 200, h: 24 },
-        { x: 1250, y: 340, w: 180, h: 24 },
-        { x: 1500, y: 280, w: 160, h: 24 },
-        { x: 1800, y: 360, w: 220, h: 24 },
-        { x: 2150, y: 300, w: 180, h: 24 },
-        { x: 2450, y: 380, w: 200, h: 24 },
-        { x: 2750, y: 320, w: 180, h: 24 },
-        { x: 3050, y: 360, w: 200, h: 24 },
-        { x: 3350, y: 300, w: 180, h: 24 },
-        { x: 3650, y: 380, w: 220, h: 24 },
+        { x: 0, y: 480, w: LEVEL_W, h: 60 },
       ];
+      // Generate platforms procedurally across the level
+      let px2 = 350;
+      while (px2 < LEVEL_W - 600) {
+        const pw = 140 + Math.random()*120;
+        const py = 240 + Math.random()*180;
+        platforms.push({ x: px2, y: py, w: pw, h: 24 });
+        px2 += pw + 90 + Math.random()*120;
+      }
 
-      const tints: Array<"yellow"|"red"|"black"> = ["yellow","red","black","yellow","red","black","yellow","red"];
-      const enemies: Enemy[] = [
-        { x: 500, baseY: 200 }, { x: 950, baseY: 180 }, { x: 1350, baseY: 200 },
-        { x: 1700, baseY: 160 }, { x: 2050, baseY: 200 }, { x: 2400, baseY: 180 },
-        { x: 2800, baseY: 200 }, { x: 3200, baseY: 170 },
-      ].map((e, i): Enemy => ({
-        x: e.x, y: e.baseY, vx: 1.2, vy: 0, baseY: e.baseY,
-        patrolMin: e.x - 120, patrolMax: e.x + 120, state: "patrol",
-        tint: tints[i % tints.length], hp: 1, alive: true, w: 70, h: 100,
-      }));
+      const tints: Array<"yellow"|"red"|"black"> = ["yellow","red","black"];
+      const enemies: Enemy[] = [];
+      for (let i = 0; i < 22; i++) {
+        const ex = 500 + i * (LEVEL_W - 1200) / 22 + Math.random()*80;
+        const ey = 140 + Math.random()*120;
+        enemies.push({
+          x: ex, y: ey, vx: 0.6 * (Math.random()<0.5?-1:1), vy: 0,
+          baseY: ey, patrolMin: ex - 140, patrolMax: ex + 140,
+          state: "patrol", tint: tints[i % 3], hp: 1, alive: true, w: 70, h: 100,
+        });
+      }
 
       const notes: Note[] = [];
-      for (let i = 0; i < 30; i++) {
-        notes.push({ x: 300 + i * 140 + Math.random()*40, y: 200 + Math.random() * 220, collected: false, phase: Math.random()*Math.PI*2 });
+      const noteCount = 70;
+      for (let i = 0; i < noteCount; i++) {
+        notes.push({
+          x: 300 + i * (LEVEL_W - 600) / noteCount + Math.random()*40,
+          y: 180 + Math.random() * 240,
+          collected: false, phase: Math.random()*Math.PI*2,
+        });
       }
 
       const bossX = LEVEL_W - 400;
@@ -123,6 +273,10 @@ function Game() {
       const bossProjs: BossProj[] = [];
 
       const keys: Record<string, boolean> = {};
+      let spaceHoldStart = 0;
+      let spaceFired = false;
+      const SPACE_LONG_MS = 250;
+
       const downKey = (e: KeyboardEvent) => {
         if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault();
         if (e.key === "ArrowUp" && !keys.ArrowUp) {
@@ -130,15 +284,31 @@ function Game() {
           else if (player.jumps < 2) { player.vy = -11; player.jumps = 2; }
         }
         if (e.key === " " && !keys[" "]) {
-          // throw bow
-          if (bows.length === 0) {
-            bows.push({ x: player.x + player.w/2, y: player.y + 40, vx: 9 * player.facing, t: 0, active: true, returning: false });
-          }
-          player.swordSwing = 15;
+          spaceHoldStart = performance.now();
+          spaceFired = false;
+          player.swingAnim = 18;
+          playSwoosh();
         }
         keys[e.key] = true;
       };
-      const upKey = (e: KeyboardEvent) => { keys[e.key] = false; };
+      const upKey = (e: KeyboardEvent) => {
+        if (e.key === " ") {
+          const heldMs = performance.now() - spaceHoldStart;
+          if (!spaceFired) {
+            if (heldMs >= SPACE_LONG_MS) {
+              // Long press → boomerang throw
+              bows.push({
+                x: player.x + player.w/2 + 40*player.facing,
+                y: player.y + 80,
+                vx: 11 * player.facing, t: 0, active: true, returning: false, boomerang: true,
+              });
+            }
+            // Short press = melee only (handled by swing animation hitbox)
+            spaceFired = true;
+          }
+        }
+        keys[e.key] = false;
+      };
       window.addEventListener("keydown", downKey);
       window.addEventListener("keyup", upKey);
 
@@ -147,18 +317,12 @@ function Game() {
       let gameState: "play"|"win"|"lose" = "play";
       let tick = 0;
 
-      const tintColor = (t: "yellow"|"red"|"black") =>
-        t === "yellow" ? "rgba(255,210,60,0.55)" :
-        t === "red"    ? "rgba(220,40,40,0.55)" :
-                         "rgba(20,20,20,0.55)";
-
       const collidesRect = (a: {x:number;y:number;w:number;h:number}, b: {x:number;y:number;w:number;h:number}) =>
         a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
 
       const loop = () => {
         if (stopped) return;
         tick++;
-        // Input
         if (gameState === "play") {
           const speed = 4.5;
           if (keys.ArrowLeft) { player.vx = -speed; player.facing = -1; }
@@ -169,11 +333,9 @@ function Game() {
           player.x += player.vx;
           player.y += player.vy;
 
-          // Platform collisions
           player.onGround = false;
           for (const p of platforms) {
             if (player.x + player.w > p.x && player.x < p.x + p.w) {
-              // landing from above
               if (player.vy >= 0 && player.y + player.h - player.vy <= p.y + 2 && player.y + player.h >= p.y) {
                 player.y = p.y - player.h;
                 player.vy = 0;
@@ -187,79 +349,93 @@ function Game() {
           if (player.y > H + 200) { life--; playBassHit(); player.x = 100; player.y = 100; player.vy = 0; player.invuln = 90; }
 
           if (player.invuln > 0) player.invuln--;
-          if (player.swordSwing > 0) player.swordSwing--;
+          if (player.swingAnim > 0) player.swingAnim--;
 
-          // Camera
           camX = Math.max(0, Math.min(LEVEL_W - W, player.x - W/2 + player.w/2));
 
-          // Enemies AI
+          // Melee swing hitbox during animation
+          const meleeActive = player.swingAnim > 4 && player.swingAnim < 16;
+          const meleeBox = meleeActive ? {
+            x: player.facing === 1 ? player.x + player.w - 20 : player.x - 110,
+            y: player.y + 30,
+            w: 140, h: 140,
+          } : null;
+
+          // Enemies AI (slower)
           for (const e of enemies) {
             if (!e.alive) continue;
             const dx = (player.x + player.w/2) - (e.x + e.w/2);
             const dy = (player.y + player.h/2) - (e.y + e.h/2);
             const dist = Math.hypot(dx, dy);
             if (e.state === "patrol") {
-              e.y = e.baseY + Math.sin(tick*0.05 + e.x)*8;
+              e.y = e.baseY + Math.sin(tick*0.04 + e.x)*8;
               e.x += e.vx;
               if (e.x < e.patrolMin) e.vx = Math.abs(e.vx);
               if (e.x > e.patrolMax) e.vx = -Math.abs(e.vx);
               if (dist < 220 && player.y > e.y) {
                 e.state = "dive";
-                e.vx = Math.sign(dx) * 3;
-                e.vy = 4;
+                e.vx = Math.sign(dx) * 1.8;
+                e.vy = 2.4;
               }
             } else {
               e.x += e.vx;
-              e.vy += 0.3;
+              e.vy += 0.2;
               e.y += e.vy;
               if (e.y > 460) {
                 e.state = "patrol";
-                e.y = e.baseY; e.vy = 0; e.vx = 1.2 * (Math.random()<0.5?-1:1);
+                e.y = e.baseY; e.vy = 0; e.vx = 0.6 * (Math.random()<0.5?-1:1);
               }
             }
-            // collide with player
             const eb = { x: e.x+10, y: e.y+10, w: e.w-20, h: e.h-20 };
+            // Melee kill
+            if (meleeBox && collidesRect(meleeBox, eb)) {
+              e.alive = false; score += 200;
+              continue;
+            }
             const pb = { x: player.x+15, y: player.y+10, w: player.w-30, h: player.h-20 };
             if (collidesRect(pb, eb) && player.invuln === 0) {
-              // stomp?
               if (player.vy > 2 && player.y + player.h < e.y + e.h/2 + 20) {
-                e.alive = false;
-                player.vy = -10;
-                score += 200;
+                e.alive = false; player.vy = -10; score += 200;
               } else {
-                life--; playBassHit();
-                player.invuln = 90;
-                player.vy = -8;
-                player.vx = -player.facing * 6;
+                life--; playBassHit(); player.invuln = 90;
+                player.vy = -8; player.vx = -player.facing * 6;
               }
             }
           }
 
-          // Bows
+          // Melee on boss
+          if (meleeBox && bossObj.alive && score >= 20000) {
+            const bb = { x: bossObj.x+30, y: bossObj.y+20, w: bossObj.w-60, h: bossObj.h-40 };
+            if (collidesRect(meleeBox, bb) && bossObj.hitFlash === 0) {
+              bossObj.hp--; bossObj.hitFlash = 20; score += 100;
+              if (bossObj.hp <= 0) { bossObj.alive = false; gameState = "win"; }
+            }
+          }
+
+          // Boomerangs
           for (const b of bows) {
             b.t++;
             b.x += b.vx;
-            if (!b.returning && (b.t > 40 || !keys[" "])) {
-              b.returning = true;
+            if (b.boomerang) {
+              if (!b.returning && b.t > 35) b.returning = true;
+              if (b.returning) {
+                const ddx = (player.x + player.w/2) - b.x;
+                b.vx = Math.sign(ddx) * 11;
+                if (Math.abs(ddx) < 25) b.active = false;
+              }
+            } else {
+              if (b.t > 30) b.active = false;
             }
-            if (b.returning) {
-              const dx = (player.x + player.w/2) - b.x;
-              b.vx = Math.sign(dx) * 10;
-              if (Math.abs(dx) < 20) b.active = false;
-            }
+            const hb = {x:b.x-32, y:b.y-12, w:64, h:24};
             for (const e of enemies) {
               if (!e.alive) continue;
-              if (collidesRect({x:b.x-20,y:b.y-6,w:40,h:12}, {x:e.x+10,y:e.y+10,w:e.w-20,h:e.h-20})) {
-                e.alive = false;
-                score += 150;
+              if (collidesRect(hb, {x:e.x+10,y:e.y+10,w:e.w-20,h:e.h-20})) {
+                e.alive = false; score += 150;
               }
             }
-            // boss
-            if (bossObj.alive && collidesRect({x:b.x-20,y:b.y-6,w:40,h:12}, {x:bossObj.x+30,y:bossObj.y+20,w:bossObj.w-60,h:bossObj.h-40})) {
+            if (bossObj.alive && score >= 20000 && collidesRect(hb, {x:bossObj.x+30,y:bossObj.y+20,w:bossObj.w-60,h:bossObj.h-40})) {
               if (bossObj.hitFlash === 0) {
-                bossObj.hp--;
-                bossObj.hitFlash = 20;
-                score += 100;
+                bossObj.hp--; bossObj.hitFlash = 20; score += 100;
                 if (bossObj.hp <= 0) { bossObj.alive = false; gameState = "win"; }
               }
               b.returning = true;
@@ -272,9 +448,7 @@ function Game() {
             if (n.collected) continue;
             n.phase += 0.1;
             if (collidesRect({x:player.x,y:player.y,w:player.w,h:player.h}, {x:n.x-15,y:n.y-15,w:30,h:30})) {
-              n.collected = true;
-              stars++;
-              score += 500;
+              n.collected = true; stars++; score += 500;
               if (life < 5 && stars % 5 === 0) life++;
             }
           }
@@ -288,23 +462,20 @@ function Game() {
 
             bossObj.jumpTimer--;
             if (bossObj.jumpTimer <= 0 && bossObj.onGround) {
-              bossObj.vy = -15;
-              bossObj.jumpTimer = 140 + Math.random()*60;
+              bossObj.vy = -15; bossObj.jumpTimer = 140 + Math.random()*60;
             }
             bossObj.attackTimer--;
             if (bossObj.attackTimer <= 0) {
-              const dx = (player.x+player.w/2) - (bossObj.x+bossObj.w/2);
-              const dy = (player.y+player.h/2) - (bossObj.y+80);
-              const len = Math.hypot(dx,dy) || 1;
+              const dxb = (player.x+player.w/2) - (bossObj.x+bossObj.w/2);
+              const dyb = (player.y+player.h/2) - (bossObj.y+80);
               for (let i=-1;i<=1;i++) {
-                const ang = Math.atan2(dy,dx) + i*0.15;
+                const ang = Math.atan2(dyb,dxb) + i*0.15;
                 bossProjs.push({ x: bossObj.x+30, y: bossObj.y+80, vx: Math.cos(ang)*5, vy: Math.sin(ang)*5, t: 0 });
               }
               bossObj.attackTimer = 100;
             }
             if (bossObj.hitFlash > 0) bossObj.hitFlash--;
 
-            // stomp boss
             const bb = { x: bossObj.x+30, y: bossObj.y+20, w: bossObj.w-60, h: bossObj.h-40 };
             const pb2 = { x: player.x+15, y: player.y+10, w: player.w-30, h: player.h-20 };
             if (collidesRect(pb2, bb) && player.invuln === 0) {
@@ -334,41 +505,34 @@ function Game() {
 
         // ===== RENDER =====
         ctx.clearRect(0,0,W,H);
-        // Sky gradient
         const sky = ctx.createLinearGradient(0,0,0,H);
         sky.addColorStop(0,"#7ec8ff"); sky.addColorStop(1,"#ffe4a8");
         ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
 
-        // Parallax background image - tile with horizontal parallax
         const bgScale = H / bg.height;
         const bgW = bg.width * bgScale;
         const parX = -(camX * 0.4) % bgW;
         for (let x = parX - bgW; x < W; x += bgW) {
           ctx.drawImage(bg, x, 0, bgW, H);
         }
-        // Distant clouds parallax
         ctx.fillStyle = "rgba(255,255,255,0.7)";
         for (let i=0;i<8;i++){
-          const cx = ((i*340) - camX*0.2) % (W+400);
-          const x = cx < -200 ? cx + W+400 : cx;
+          const cx2 = ((i*340) - camX*0.2) % (W+400);
+          const x = cx2 < -200 ? cx2 + W+400 : cx2;
           ctx.beginPath(); ctx.ellipse(x, 60+i*8, 50, 16, 0, 0, Math.PI*2); ctx.fill();
         }
 
-        // Platforms (sandstone)
         for (const p of platforms) {
           const x = p.x - camX;
           if (x + p.w < 0 || x > W) continue;
-          ctx.fillStyle = "#c89968";
-          ctx.fillRect(x, p.y, p.w, p.h);
-          ctx.fillStyle = "#a67a4d";
-          ctx.fillRect(x, p.y, p.w, 6);
+          ctx.fillStyle = "#c89968"; ctx.fillRect(x, p.y, p.w, p.h);
+          ctx.fillStyle = "#a67a4d"; ctx.fillRect(x, p.y, p.w, 6);
           ctx.strokeStyle = "rgba(80,50,20,0.4)"; ctx.lineWidth = 1;
           for (let bx = 0; bx < p.w; bx += 40) {
             ctx.strokeRect(x+bx, p.y, 40, Math.min(p.h, 30));
           }
         }
 
-        // Notes
         for (const n of notes) {
           if (n.collected) continue;
           const x = n.x - camX;
@@ -382,7 +546,6 @@ function Game() {
           ctx.restore();
         }
 
-        // Boss (only appears after 20 000 points)
         if (bossObj.alive && score >= 20000) {
           const bx = bossObj.x - camX;
           if (bx + bossObj.w > -50 && bx < W+50) {
@@ -393,7 +556,6 @@ function Game() {
           }
         }
 
-        // Boss projectiles
         for (const p of bossProjs) {
           const x = p.x - camX;
           ctx.save();
@@ -405,49 +567,92 @@ function Game() {
           ctx.restore();
         }
 
-        // Enemies with rotation (tilt left by default, right when chasing right) + color tint
+        // Enemies: recolored sprite + tilt
         for (const e of enemies) {
           if (!e.alive) continue;
           const x = e.x - camX;
           if (x + e.w < -100 || x > W + 100) continue;
           const angle = e.vx >= 0 ? Math.PI/2 : -Math.PI/2;
+          const sprite = enemySprites[e.tint];
           ctx.save();
           ctx.translate(x + e.w/2, e.y + e.h/2);
           ctx.rotate(angle);
-          ctx.drawImage(enemy, -e.w/2, -e.h/2, e.w, e.h);
-          ctx.globalCompositeOperation = "source-atop";
-          ctx.fillStyle = tintColor(e.tint);
-          ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h);
+          ctx.drawImage(sprite, -e.w/2, -e.h/2, e.w, e.h);
           ctx.restore();
         }
 
         // Player
         ctx.save();
         if (player.invuln > 0 && Math.floor(player.invuln/4)%2===0) ctx.globalAlpha = 0.4;
-        const px = player.x - camX;
+        const pxs = player.x - camX;
         if (player.facing === -1) {
-          ctx.translate(px + player.w, player.y);
+          ctx.translate(pxs + player.w, player.y);
           ctx.scale(-1, 1);
           ctx.drawImage(hero, 0, 0, player.w, player.h);
         } else {
-          ctx.drawImage(hero, px, player.y, player.w, player.h);
+          ctx.drawImage(hero, pxs, player.y, player.w, player.h);
         }
         ctx.restore();
 
-        // Bows (thrown archet) - draw as rotating line
+        // Big archet (bow) held in hand + swing animation
+        {
+          const handX = player.x + player.w/2 + (player.facing * 30) - camX;
+          const handY = player.y + 110;
+          // Swing arc angle: from -0.8 to +0.8 over the animation
+          let ang = 0;
+          if (player.swingAnim > 0) {
+            const t = 1 - player.swingAnim / 18; // 0..1
+            ang = -0.9 + t * 1.8;
+          } else {
+            ang = -0.2; // resting tilt
+          }
+          ctx.save();
+          ctx.translate(handX, handY);
+          ctx.rotate(ang * player.facing);
+          // Bow stick (wood)
+          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 6; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(160 * player.facing, -20); ctx.stroke();
+          // Horse hair (white line)
+          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(156 * player.facing, -16); ctx.stroke();
+          // Tip + frog
+          ctx.fillStyle = "#1a0d04";
+          ctx.beginPath(); ctx.arc(160 * player.facing, -20, 5, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = "#5a2d10";
+          ctx.fillRect(-14, -6, 14, 14);
+          // Swing motion blur
+          if (player.swingAnim > 4 && player.swingAnim < 16) {
+            ctx.strokeStyle = "rgba(255,240,180,0.4)"; ctx.lineWidth = 18;
+            ctx.beginPath();
+            ctx.arc(0, 0, 140, -0.6, 0.6);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // Bows (thrown boomerang) - BIG spinning archet
         for (const b of bows) {
           const x = b.x - camX;
           ctx.save();
           ctx.translate(x, b.y);
-          ctx.rotate(b.t * 0.5);
-          ctx.strokeStyle = "#5a2d10"; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.moveTo(-22,0); ctx.lineTo(22,0); ctx.stroke();
-          ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(-20,2); ctx.lineTo(20,2); ctx.stroke();
+          ctx.rotate(b.t * 0.45);
+          // Wood
+          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 8; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(60, 0); ctx.stroke();
+          // Hair
+          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(-58, 4); ctx.lineTo(58, 4); ctx.stroke();
+          // Tip/frog
+          ctx.fillStyle = "#1a0d04";
+          ctx.beginPath(); ctx.arc(60, 0, 7, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = "#5a2d10"; ctx.fillRect(-66, -8, 16, 16);
+          // Glow trail
+          ctx.shadowColor = "#ffd84d"; ctx.shadowBlur = 18;
+          ctx.strokeStyle = "rgba(255,216,77,0.4)"; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(-55, 0); ctx.lineTo(55, 0); ctx.stroke();
           ctx.restore();
         }
 
-        // Boss HP bar
         if (bossObj.alive && score >= 20000) {
           ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(W/2-150, 50, 300, 20);
           ctx.fillStyle = "#e63946"; ctx.fillRect(W/2-148, 52, 296*(bossObj.hp/10), 16);
@@ -459,7 +664,6 @@ function Game() {
           ctx.textAlign = "left";
         }
 
-        // Win / Lose overlay
         if (gameState !== "play") {
           ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0,0,W,H);
           ctx.fillStyle = "#ffd84d"; ctx.font = "bold 64px serif"; ctx.textAlign = "center";
@@ -469,18 +673,17 @@ function Game() {
           ctx.textAlign = "left";
         }
 
-        setUi({ life, stars, score, bossHp: bossObj.hp, gameState });
+        setUi(u => ({ ...u, life, stars, score, bossHp: bossObj.hp, gameState }));
         raf = requestAnimationFrame(loop);
       };
       loop();
-
-      return () => {
-        window.removeEventListener("keydown", downKey);
-        window.removeEventListener("keyup", upKey);
-      };
     })();
 
-    return () => { stopped = true; cancelAnimationFrame(raf); };
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      if (musicCtrl.current) musicCtrl.current.stop();
+    };
   }, []);
 
   return (
@@ -497,22 +700,14 @@ function Game() {
         </div>
       </div>
       <div className="text-amber-100/80 text-sm text-center max-w-2xl">
-        ← → se déplacer · ↑ sauter (↑↑ double saut) · ESPACE lancer l'archet (boomerang) · sauter sur les ennemis pour les écraser
+        ← → se déplacer · ↑ sauter (↑↑ double saut) · ESPACE coup d'archet · ESPACE maintenu → lance l'archet en boomerang · sauter sur les ennemis pour les écraser
       </div>
-      <div className="w-full max-w-2xl">
-        <iframe
-          title="Bande son"
-          width="100%"
-          height="120"
-          allow="autoplay"
-          scrolling="no"
-          frameBorder="no"
-          src="https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fmathieu-verlot%2Fles-chiens-aboient&color=%23d97706&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false"
-        />
-        <div className="text-amber-100/60 text-xs text-center mt-1">
-          ♪ Bande son : <a className="underline" href="https://soundcloud.com/mathieu-verlot/les-chiens-aboient" target="_blank" rel="noreferrer">Les chiens aboient — Mathieu Verlot</a>
-        </div>
-      </div>
+      <button
+        onClick={() => ui.musicOn ? musicCtrl.current?.stop() : musicCtrl.current?.start()}
+        className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-amber-50 font-semibold shadow"
+      >
+        {ui.musicOn ? "♪ Couper la musique" : "♪ Lancer la musique du désert"}
+      </button>
     </div>
   );
 }
