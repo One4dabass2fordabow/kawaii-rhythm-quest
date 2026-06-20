@@ -4,6 +4,9 @@ import heroImg from "@/assets/hero.png";
 import enemyImg from "@/assets/enemy.png";
 import bossImg from "@/assets/boss.png";
 import bgImg from "@/assets/background.png";
+import levelMusicAsset from "@/assets/level-music.mp3.asset.json";
+import bossMusicAsset from "@/assets/boss-music.mp3.asset.json";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -139,94 +142,48 @@ function Game() {
         } catch {}
       };
 
-      // Procedural desert-music loop (oriental scale, bass + flute-like lead + percussive)
-      let musicNodes: { stop: () => void } | null = null;
+      // Music: real MP3 tracks, switch when boss appears
+      const levelAudio = new Audio(levelMusicAsset.url);
+      levelAudio.loop = true; levelAudio.volume = 0.55;
+      const bossAudio = new Audio(bossMusicAsset.url);
+      bossAudio.loop = true; bossAudio.volume = 0.65;
+      let currentTrack: "level" | "boss" | null = null;
+      let musicEnabled = false;
+      const fadeTo = (a: HTMLAudioElement, target: number, ms = 600) => {
+        const start = a.volume, t0 = performance.now();
+        const step = () => {
+          const k = Math.min(1, (performance.now()-t0)/ms);
+          a.volume = start + (target-start)*k;
+          if (k < 1) requestAnimationFrame(step);
+          else if (target === 0) a.pause();
+        };
+        step();
+      };
+      const playTrack = (which: "level" | "boss") => {
+        if (!musicEnabled) return;
+        if (currentTrack === which) return;
+        const next = which === "level" ? levelAudio : bossAudio;
+        const prev = which === "level" ? bossAudio : levelAudio;
+        if (!prev.paused) fadeTo(prev, 0, 500);
+        next.volume = 0;
+        next.play().then(() => fadeTo(next, which === "boss" ? 0.65 : 0.55, 500)).catch(() => {});
+        currentTrack = which;
+      };
       const startMusic = () => {
-        if (musicNodes) return;
-        try {
-          const c2 = ensureCtx();
-          const master = c2.createGain();
-          master.gain.value = 0.18;
-          master.connect(c2.destination);
-
-          // Phrygian-dominant scale (desert flavor) in D
-          const scale = [146.83, 155.56, 196.00, 220.00, 233.08, 261.63, 311.13, 293.66];
-          const bassNotes = [73.42, 73.42, 98.00, 73.42, 73.42, 87.31, 98.00, 87.31];
-          let step = 0;
-          const noteLen = 0.42;
-
-          const lead = c2.createGain(); lead.gain.value = 0.22; lead.connect(master);
-          const bass = c2.createGain(); bass.gain.value = 0.35; bass.connect(master);
-          const drum = c2.createGain(); drum.gain.value = 0.5;  drum.connect(master);
-
-          const schedule = (when: number, idx: number) => {
-            // Lead (triangle, flute-ish)
-            const freq = scale[idx % scale.length];
-            const o = c2.createOscillator(); o.type = "triangle"; o.frequency.value = freq;
-            const g = c2.createGain();
-            g.gain.setValueAtTime(0.0001, when);
-            g.gain.exponentialRampToValueAtTime(0.4, when + 0.04);
-            g.gain.exponentialRampToValueAtTime(0.0001, when + noteLen * 0.9);
-            o.connect(g); g.connect(lead);
-            o.start(when); o.stop(when + noteLen);
-
-            // Bass every 2 steps
-            if (idx % 2 === 0) {
-              const bf = bassNotes[(idx/2) % bassNotes.length];
-              const bo = c2.createOscillator(); bo.type = "sawtooth"; bo.frequency.value = bf;
-              const bg = c2.createGain();
-              const bfil = c2.createBiquadFilter(); bfil.type = "lowpass"; bfil.frequency.value = 350;
-              bg.gain.setValueAtTime(0.0001, when);
-              bg.gain.exponentialRampToValueAtTime(0.55, when + 0.03);
-              bg.gain.exponentialRampToValueAtTime(0.0001, when + noteLen * 1.6);
-              bo.connect(bfil); bfil.connect(bg); bg.connect(bass);
-              bo.start(when); bo.stop(when + noteLen * 1.7);
-            }
-
-            // Percussion (tabla-ish) on every step
-            const buf = c2.createBuffer(1, c2.sampleRate * 0.12, c2.sampleRate);
-            const data = buf.getChannelData(0);
-            for (let i = 0; i < data.length; i++) {
-              data[i] = (Math.random()*2-1) * Math.pow(1 - i/data.length, 3);
-            }
-            const noise = c2.createBufferSource(); noise.buffer = buf;
-            const nf = c2.createBiquadFilter(); nf.type = "bandpass";
-            nf.frequency.value = idx % 4 === 0 ? 180 : 600;
-            nf.Q.value = 4;
-            const ng = c2.createGain(); ng.gain.value = idx % 4 === 0 ? 0.6 : 0.3;
-            noise.connect(nf); nf.connect(ng); ng.connect(drum);
-            noise.start(when);
-          };
-
-          let nextTime = c2.currentTime + 0.1;
-          let stopped2 = false;
-          const tickFn = () => {
-            if (stopped2) return;
-            while (nextTime < c2.currentTime + 0.5) {
-              schedule(nextTime, step);
-              step++;
-              nextTime += noteLen;
-            }
-            setTimeout(tickFn, 100);
-          };
-          tickFn();
-
-          musicNodes = {
-            stop: () => {
-              stopped2 = true;
-              try { master.gain.exponentialRampToValueAtTime(0.0001, c2.currentTime + 0.3); } catch {}
-              setTimeout(() => { try { master.disconnect(); } catch {} }, 500);
-            },
-          };
-        } catch {}
+        musicEnabled = true;
+        playTrack("level");
       };
       const stopMusic = () => {
-        if (musicNodes) { musicNodes.stop(); musicNodes = null; }
+        musicEnabled = false;
+        try { fadeTo(levelAudio, 0, 300); } catch {}
+        try { fadeTo(bossAudio, 0, 300); } catch {}
+        currentTrack = null;
       };
       musicCtrl.current = {
         start: () => { startMusic(); setUi(u => ({...u, musicOn: true})); },
         stop:  () => { stopMusic();  setUi(u => ({...u, musicOn: false})); },
       };
+
 
       // ===== World (bigger level) =====
       const platforms: Platform[] = [
@@ -501,7 +458,14 @@ function Game() {
           }
 
           if (life <= 0) gameState = "lose";
+
+          // Music switch when boss arrives
+          if (musicEnabled) {
+            if (bossObj.alive && score >= 20000) playTrack("boss");
+            else if (!bossObj.alive || score < 20000) playTrack("level");
+          }
         }
+
 
         // ===== RENDER =====
         ctx.clearRect(0,0,W,H);
@@ -594,64 +558,54 @@ function Game() {
         }
         ctx.restore();
 
-        // Big archet (bow) held in hand + swing animation
-        {
-          const handX = player.x + player.w/2 + (player.facing * 30) - camX;
-          const handY = player.y + 110;
-          // Swing arc angle: from -0.8 to +0.8 over the animation
-          let ang = 0;
-          if (player.swingAnim > 0) {
-            const t = 1 - player.swingAnim / 18; // 0..1
-            ang = -0.9 + t * 1.8;
-          } else {
-            ang = -0.2; // resting tilt
-          }
+        // Swing effect — visual feedback for the bow already in the hero's hand
+        if (player.swingAnim > 0) {
+          const handX = player.x + player.w/2 + (player.facing * 40) - camX;
+          const handY = player.y + 120;
+          const t = 1 - player.swingAnim / 18; // 0..1
+          const ang = -0.9 + t * 1.8;
           ctx.save();
           ctx.translate(handX, handY);
           ctx.rotate(ang * player.facing);
-          // Bow stick (wood)
-          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 6; ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(160 * player.facing, -20); ctx.stroke();
-          // Horse hair (white line)
-          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(156 * player.facing, -16); ctx.stroke();
-          // Tip + frog
-          ctx.fillStyle = "#1a0d04";
-          ctx.beginPath(); ctx.arc(160 * player.facing, -20, 5, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = "#5a2d10";
-          ctx.fillRect(-14, -6, 14, 14);
-          // Swing motion blur
-          if (player.swingAnim > 4 && player.swingAnim < 16) {
-            ctx.strokeStyle = "rgba(255,240,180,0.4)"; ctx.lineWidth = 18;
+          // Whoosh arc
+          ctx.strokeStyle = "rgba(255,240,180,0.55)";
+          ctx.lineWidth = 10;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.arc(0, 0, 70, -0.8, 0.8);
+          ctx.stroke();
+          // Speed lines
+          ctx.strokeStyle = "rgba(255,255,255,0.4)";
+          ctx.lineWidth = 3;
+          for (let i = 0; i < 3; i++) {
+            const r = 55 + i*10;
             ctx.beginPath();
-            ctx.arc(0, 0, 140, -0.6, 0.6);
+            ctx.arc(0, 0, r, -0.4, 0.4);
             ctx.stroke();
           }
           ctx.restore();
         }
 
-        // Bows (thrown boomerang) - BIG spinning archet
+        // Thrown boomerang — small spinning bow (the one from the hero's hand)
         for (const b of bows) {
           const x = b.x - camX;
           ctx.save();
           ctx.translate(x, b.y);
-          ctx.rotate(b.t * 0.45);
+          ctx.rotate(b.t * 0.5);
+          ctx.shadowColor = "#ffd84d"; ctx.shadowBlur = 12;
           // Wood
-          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 8; ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(60, 0); ctx.stroke();
+          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 4; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-28, 0); ctx.lineTo(28, 0); ctx.stroke();
           // Hair
-          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.moveTo(-58, 4); ctx.lineTo(58, 4); ctx.stroke();
+          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-26, 2); ctx.lineTo(26, 2); ctx.stroke();
           // Tip/frog
           ctx.fillStyle = "#1a0d04";
-          ctx.beginPath(); ctx.arc(60, 0, 7, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = "#5a2d10"; ctx.fillRect(-66, -8, 16, 16);
-          // Glow trail
-          ctx.shadowColor = "#ffd84d"; ctx.shadowBlur = 18;
-          ctx.strokeStyle = "rgba(255,216,77,0.4)"; ctx.lineWidth = 4;
-          ctx.beginPath(); ctx.moveTo(-55, 0); ctx.lineTo(55, 0); ctx.stroke();
+          ctx.beginPath(); ctx.arc(28, 0, 3.5, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = "#5a2d10"; ctx.fillRect(-32, -4, 8, 8);
           ctx.restore();
         }
+
 
         if (bossObj.alive && score >= 20000) {
           ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(W/2-150, 50, 300, 20);
