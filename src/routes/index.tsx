@@ -4,6 +4,9 @@ import heroImg from "@/assets/hero.png";
 import enemyImg from "@/assets/enemy.png";
 import bossImg from "@/assets/boss.png";
 import bgImg from "@/assets/background.png";
+import levelMusicAsset from "@/assets/level-music.mp3.asset.json";
+import bossMusicAsset from "@/assets/boss-music.mp3.asset.json";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
