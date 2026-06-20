@@ -142,94 +142,48 @@ function Game() {
         } catch {}
       };
 
-      // Procedural desert-music loop (oriental scale, bass + flute-like lead + percussive)
-      let musicNodes: { stop: () => void } | null = null;
+      // Music: real MP3 tracks, switch when boss appears
+      const levelAudio = new Audio(levelMusicAsset.url);
+      levelAudio.loop = true; levelAudio.volume = 0.55;
+      const bossAudio = new Audio(bossMusicAsset.url);
+      bossAudio.loop = true; bossAudio.volume = 0.65;
+      let currentTrack: "level" | "boss" | null = null;
+      let musicEnabled = false;
+      const fadeTo = (a: HTMLAudioElement, target: number, ms = 600) => {
+        const start = a.volume, t0 = performance.now();
+        const step = () => {
+          const k = Math.min(1, (performance.now()-t0)/ms);
+          a.volume = start + (target-start)*k;
+          if (k < 1) requestAnimationFrame(step);
+          else if (target === 0) a.pause();
+        };
+        step();
+      };
+      const playTrack = (which: "level" | "boss") => {
+        if (!musicEnabled) return;
+        if (currentTrack === which) return;
+        const next = which === "level" ? levelAudio : bossAudio;
+        const prev = which === "level" ? bossAudio : levelAudio;
+        if (!prev.paused) fadeTo(prev, 0, 500);
+        next.volume = 0;
+        next.play().then(() => fadeTo(next, which === "boss" ? 0.65 : 0.55, 500)).catch(() => {});
+        currentTrack = which;
+      };
       const startMusic = () => {
-        if (musicNodes) return;
-        try {
-          const c2 = ensureCtx();
-          const master = c2.createGain();
-          master.gain.value = 0.18;
-          master.connect(c2.destination);
-
-          // Phrygian-dominant scale (desert flavor) in D
-          const scale = [146.83, 155.56, 196.00, 220.00, 233.08, 261.63, 311.13, 293.66];
-          const bassNotes = [73.42, 73.42, 98.00, 73.42, 73.42, 87.31, 98.00, 87.31];
-          let step = 0;
-          const noteLen = 0.42;
-
-          const lead = c2.createGain(); lead.gain.value = 0.22; lead.connect(master);
-          const bass = c2.createGain(); bass.gain.value = 0.35; bass.connect(master);
-          const drum = c2.createGain(); drum.gain.value = 0.5;  drum.connect(master);
-
-          const schedule = (when: number, idx: number) => {
-            // Lead (triangle, flute-ish)
-            const freq = scale[idx % scale.length];
-            const o = c2.createOscillator(); o.type = "triangle"; o.frequency.value = freq;
-            const g = c2.createGain();
-            g.gain.setValueAtTime(0.0001, when);
-            g.gain.exponentialRampToValueAtTime(0.4, when + 0.04);
-            g.gain.exponentialRampToValueAtTime(0.0001, when + noteLen * 0.9);
-            o.connect(g); g.connect(lead);
-            o.start(when); o.stop(when + noteLen);
-
-            // Bass every 2 steps
-            if (idx % 2 === 0) {
-              const bf = bassNotes[(idx/2) % bassNotes.length];
-              const bo = c2.createOscillator(); bo.type = "sawtooth"; bo.frequency.value = bf;
-              const bg = c2.createGain();
-              const bfil = c2.createBiquadFilter(); bfil.type = "lowpass"; bfil.frequency.value = 350;
-              bg.gain.setValueAtTime(0.0001, when);
-              bg.gain.exponentialRampToValueAtTime(0.55, when + 0.03);
-              bg.gain.exponentialRampToValueAtTime(0.0001, when + noteLen * 1.6);
-              bo.connect(bfil); bfil.connect(bg); bg.connect(bass);
-              bo.start(when); bo.stop(when + noteLen * 1.7);
-            }
-
-            // Percussion (tabla-ish) on every step
-            const buf = c2.createBuffer(1, c2.sampleRate * 0.12, c2.sampleRate);
-            const data = buf.getChannelData(0);
-            for (let i = 0; i < data.length; i++) {
-              data[i] = (Math.random()*2-1) * Math.pow(1 - i/data.length, 3);
-            }
-            const noise = c2.createBufferSource(); noise.buffer = buf;
-            const nf = c2.createBiquadFilter(); nf.type = "bandpass";
-            nf.frequency.value = idx % 4 === 0 ? 180 : 600;
-            nf.Q.value = 4;
-            const ng = c2.createGain(); ng.gain.value = idx % 4 === 0 ? 0.6 : 0.3;
-            noise.connect(nf); nf.connect(ng); ng.connect(drum);
-            noise.start(when);
-          };
-
-          let nextTime = c2.currentTime + 0.1;
-          let stopped2 = false;
-          const tickFn = () => {
-            if (stopped2) return;
-            while (nextTime < c2.currentTime + 0.5) {
-              schedule(nextTime, step);
-              step++;
-              nextTime += noteLen;
-            }
-            setTimeout(tickFn, 100);
-          };
-          tickFn();
-
-          musicNodes = {
-            stop: () => {
-              stopped2 = true;
-              try { master.gain.exponentialRampToValueAtTime(0.0001, c2.currentTime + 0.3); } catch {}
-              setTimeout(() => { try { master.disconnect(); } catch {} }, 500);
-            },
-          };
-        } catch {}
+        musicEnabled = true;
+        playTrack("level");
       };
       const stopMusic = () => {
-        if (musicNodes) { musicNodes.stop(); musicNodes = null; }
+        musicEnabled = false;
+        try { fadeTo(levelAudio, 0, 300); } catch {}
+        try { fadeTo(bossAudio, 0, 300); } catch {}
+        currentTrack = null;
       };
       musicCtrl.current = {
         start: () => { startMusic(); setUi(u => ({...u, musicOn: true})); },
         stop:  () => { stopMusic();  setUi(u => ({...u, musicOn: false})); },
       };
+
 
       // ===== World (bigger level) =====
       const platforms: Platform[] = [
