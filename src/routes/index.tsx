@@ -365,7 +365,7 @@ function Game() {
           if (meleeBox && bossObj.alive && score >= 20000) {
             const bb = { x: bossObj.x+30, y: bossObj.y+20, w: bossObj.w-60, h: bossObj.h-40 };
             if (collidesRect(meleeBox, bb) && bossObj.hitFlash === 0) {
-              bossObj.hp--; bossObj.hitFlash = 20; score += 100;
+              bossObj.hp--; bossObj.hitFlash = 20; score += 100; bossObj.everHit = true;
               if (bossObj.hp <= 0) { bossObj.alive = false; gameState = "win"; }
             }
           }
