@@ -452,8 +452,21 @@ function Game() {
           for (let i = bossProjs.length-1; i>=0; i--) {
             const p = bossProjs[i];
             p.x += p.vx; p.y += p.vy; p.t++;
+            const pbox = {x:p.x-10,y:p.y-10,w:20,h:20};
+            // Melee swing destroys projectiles
+            if (meleeBox && collidesRect(meleeBox, pbox)) {
+              bossProjs.splice(i,1); score += 25; continue;
+            }
+            // Boomerang destroys projectiles
+            let destroyed = false;
+            for (const b of bows) {
+              if (collidesRect({x:b.x-32,y:b.y-12,w:64,h:24}, pbox)) {
+                bossProjs.splice(i,1); score += 25; destroyed = true; break;
+              }
+            }
+            if (destroyed) continue;
             if (p.t > 240 || p.x < 0 || p.x > LEVEL_W || p.y > H+50) bossProjs.splice(i,1);
-            else if (player.invuln === 0 && collidesRect({x:p.x-10,y:p.y-10,w:20,h:20}, {x:player.x+15,y:player.y+10,w:player.w-30,h:player.h-20})) {
+            else if (player.invuln === 0 && collidesRect(pbox, {x:player.x+15,y:player.y+10,w:player.w-30,h:player.h-20})) {
               life--; playBassHit(); player.invuln = 90; bossProjs.splice(i,1);
             }
           }
