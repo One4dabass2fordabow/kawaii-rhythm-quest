@@ -657,9 +657,24 @@ function Game() {
         if (player.facing === -1) {
           ctx.translate(pxs + player.w, player.y);
           ctx.scale(-1, 1);
-          ctx.drawImage(hero, 0, 0, player.w, player.h);
         } else {
-          ctx.drawImage(hero, pxs, player.y, player.w, player.h);
+          ctx.translate(pxs, player.y);
+        }
+        // While swinging or while the bow is away in flight, punch out the static bow
+        // baked into the sprite art so only the procedurally-animated bow is ever visible
+        // (avoids showing two bows at once).
+        const hidingHeldBow = player.swingAnim > 0 || bows.length > 0;
+        if (hidingHeldBow) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, player.w, player.h);
+          ctx.rect(121, 24, 29, 155);
+          ctx.rect(116, 24, 7, 112);
+          ctx.clip("evenodd");
+          ctx.drawImage(hero, 0, 0, player.w, player.h);
+          ctx.restore();
+        } else {
+          ctx.drawImage(hero, 0, 0, player.w, player.h);
         }
         ctx.restore();
 
