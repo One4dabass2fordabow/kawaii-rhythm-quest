@@ -190,9 +190,9 @@ function Game() {
       };
 
       // Music: real MP3 tracks, switch when boss appears
-      const levelAudio = new Audio(levelMusicAsset.url);
+      const levelAudio = new Audio(levelMusicUrl);
       levelAudio.loop = true; levelAudio.volume = 0.55;
-      const bossAudio = new Audio(bossMusicAsset.url);
+      const bossAudio = new Audio(bossMusicUrl);
       bossAudio.loop = true; bossAudio.volume = 0.65;
       let currentTrack: "level" | "boss" | null = null;
       let musicEnabled = false;
