@@ -29,6 +29,7 @@ type Enemy = {
   baseY: number; patrolMin: number; patrolMax: number;
   state: "patrol" | "dive"; tint: "yellow" | "red" | "black";
   hp: number; alive: boolean; w: number; h: number;
+  kind: "violin" | "snake" | "silver"; isFlying: boolean;
 };
 type Platform = { x: number; y: number; w: number; h: number };
 type Note = { x: number; y: number; collected: boolean; phase: number };
