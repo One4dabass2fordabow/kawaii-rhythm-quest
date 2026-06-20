@@ -559,31 +559,53 @@ function Game() {
         }
         ctx.restore();
 
-        // Swing effect — visual feedback for the bow already in the hero's hand
+        // Swing animation — the hero's right hand swings the bow he's holding
         if (player.swingAnim > 0) {
-          const handX = player.x + player.w/2 + (player.facing * 40) - camX;
-          const handY = player.y + 120;
+          // Shoulder pivot (right shoulder on the sprite)
+          const shoulderX = player.x + player.w * 0.55 - camX;
+          const shoulderY = player.y + player.h * 0.42;
           const t = 1 - player.swingAnim / 18; // 0..1
-          const ang = -0.9 + t * 1.8;
+          // Arm swings from raised-up to down-forward
+          const armAngle = (-1.2 + t * 2.2) * player.facing;
+
           ctx.save();
-          ctx.translate(handX, handY);
-          ctx.rotate(ang * player.facing);
-          // Whoosh arc
-          ctx.strokeStyle = "rgba(255,240,180,0.55)";
-          ctx.lineWidth = 10;
-          ctx.lineCap = "round";
+          ctx.translate(shoulderX, shoulderY);
+          ctx.rotate(armAngle);
+
+          // Whoosh arc behind the bow
+          ctx.strokeStyle = "rgba(255,240,180,0.45)";
+          ctx.lineWidth = 9; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.arc(0, 0, 80, -0.6, 0.6); ctx.stroke();
+
+          // Forearm
+          ctx.strokeStyle = "#e8b98a"; ctx.lineWidth = 12; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(55, 5); ctx.stroke();
+          // Sleeve cuff
+          ctx.fillStyle = "#3a2615";
+          ctx.beginPath(); ctx.arc(55, 5, 9, 0, Math.PI*2); ctx.fill();
+
+          // Bow held in hand, pivoting around hand
+          ctx.save();
+          ctx.translate(60, 6);
+          // Slight extra wrist rotation through the swing
+          ctx.rotate(-0.4 + t * 0.8);
+          // Wooden stick (curved bow)
+          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 5; ctx.lineCap = "round";
           ctx.beginPath();
-          ctx.arc(0, 0, 70, -0.8, 0.8);
+          ctx.moveTo(-10, 0);
+          ctx.quadraticCurveTo(35, -8, 78, 0);
           ctx.stroke();
-          // Speed lines
-          ctx.strokeStyle = "rgba(255,255,255,0.4)";
-          ctx.lineWidth = 3;
-          for (let i = 0; i < 3; i++) {
-            const r = 55 + i*10;
-            ctx.beginPath();
-            ctx.arc(0, 0, r, -0.4, 0.4);
-            ctx.stroke();
-          }
+          // Horse hair string
+          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-8, 2); ctx.lineTo(76, 2); ctx.stroke();
+          // Frog (near hand)
+          ctx.fillStyle = "#1a0d04";
+          ctx.fillRect(-14, -4, 9, 9);
+          // Tip
+          ctx.fillStyle = "#1a0d04";
+          ctx.beginPath(); ctx.arc(78, 0, 3.5, 0, Math.PI*2); ctx.fill();
+          ctx.restore();
+
           ctx.restore();
         }
 
