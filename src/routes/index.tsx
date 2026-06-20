@@ -184,7 +184,7 @@ function Game() {
           }
           if (player.x < 0) player.x = 0;
           if (player.x + player.w > LEVEL_W) player.x = LEVEL_W - player.w;
-          if (player.y > H + 200) { life--; player.x = 100; player.y = 100; player.vy = 0; player.invuln = 90; }
+          if (player.y > H + 200) { life--; playBassHit(); player.x = 100; player.y = 100; player.vy = 0; player.invuln = 90; }
 
           if (player.invuln > 0) player.invuln--;
           if (player.swordSwing > 0) player.swordSwing--;
@@ -227,7 +227,7 @@ function Game() {
                 player.vy = -10;
                 score += 200;
               } else {
-                life--;
+                life--; playBassHit();
                 player.invuln = 90;
                 player.vy = -8;
                 player.vx = -player.facing * 6;
@@ -280,7 +280,7 @@ function Game() {
           }
 
           // Boss
-          if (bossObj.alive && player.x > bossX - 600) {
+          if (bossObj.alive && score >= 20000 && player.x > bossX - 600) {
             bossObj.vy += GRAVITY;
             bossObj.y += bossObj.vy;
             if (bossObj.y + bossObj.h >= 480) { bossObj.y = 480 - bossObj.h; bossObj.vy = 0; bossObj.onGround = true; }
@@ -315,7 +315,7 @@ function Game() {
                 }
                 player.vy = -12;
               } else {
-                life--; player.invuln = 90; player.vy = -8; player.vx = -player.facing * 8;
+                life--; playBassHit(); player.invuln = 90; player.vy = -8; player.vx = -player.facing * 8;
               }
             }
           }
@@ -325,7 +325,7 @@ function Game() {
             p.x += p.vx; p.y += p.vy; p.t++;
             if (p.t > 240 || p.x < 0 || p.x > LEVEL_W || p.y > H+50) bossProjs.splice(i,1);
             else if (player.invuln === 0 && collidesRect({x:p.x-10,y:p.y-10,w:20,h:20}, {x:player.x+15,y:player.y+10,w:player.w-30,h:player.h-20})) {
-              life--; player.invuln = 90; bossProjs.splice(i,1);
+              life--; playBassHit(); player.invuln = 90; bossProjs.splice(i,1);
             }
           }
 
@@ -382,10 +382,10 @@ function Game() {
           ctx.restore();
         }
 
-        // Boss
-        if (bossObj.alive || gameState === "win") {
+        // Boss (only appears after 20 000 points)
+        if (bossObj.alive && score >= 20000) {
           const bx = bossObj.x - camX;
-          if (bx + bossObj.w > -50 && bx < W+50 && bossObj.alive) {
+          if (bx + bossObj.w > -50 && bx < W+50) {
             ctx.save();
             if (bossObj.hitFlash > 0 && Math.floor(bossObj.hitFlash/3)%2===0) ctx.globalAlpha = 0.4;
             ctx.drawImage(boss, bx, bossObj.y, bossObj.w, bossObj.h);
@@ -405,20 +405,20 @@ function Game() {
           ctx.restore();
         }
 
-        // Enemies with color tint
+        // Enemies with rotation (tilt left by default, right when chasing right) + color tint
         for (const e of enemies) {
           if (!e.alive) continue;
           const x = e.x - camX;
-          if (x + e.w < 0 || x > W) continue;
-          ctx.drawImage(enemy, x, e.y, e.w, e.h);
-          // tint overlay
+          if (x + e.w < -100 || x > W + 100) continue;
+          const angle = e.vx >= 0 ? Math.PI/2 : -Math.PI/2;
           ctx.save();
+          ctx.translate(x + e.w/2, e.y + e.h/2);
+          ctx.rotate(angle);
+          ctx.drawImage(enemy, -e.w/2, -e.h/2, e.w, e.h);
           ctx.globalCompositeOperation = "source-atop";
-          // Use offscreen-less tint: draw colored rect masked via re-drawing image (approx)
           ctx.fillStyle = tintColor(e.tint);
-          ctx.fillRect(x, e.y, e.w, e.h);
+          ctx.fillRect(-e.w/2, -e.h/2, e.w, e.h);
           ctx.restore();
-          // Redraw image partially to keep features
         }
 
         // Player
@@ -448,11 +448,16 @@ function Game() {
         }
 
         // Boss HP bar
-        if (bossObj.alive && player.x > bossX - 800) {
+        if (bossObj.alive && score >= 20000) {
           ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(W/2-150, 50, 300, 20);
           ctx.fillStyle = "#e63946"; ctx.fillRect(W/2-148, 52, 296*(bossObj.hp/10), 16);
           ctx.fillStyle = "#fff"; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center";
           ctx.fillText("BOSS MÉTRONOME", W/2, 45); ctx.textAlign = "left";
+        } else if (!bossObj.alive ? false : true) {
+          // hint
+          ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "right";
+          ctx.fillText(`Boss à 20 000 pts (${Math.max(0,20000-score)} restants)`, W-12, H-12);
+          ctx.textAlign = "left";
         }
 
         // Win / Lose overlay
@@ -494,6 +499,20 @@ function Game() {
       </div>
       <div className="text-amber-100/80 text-sm text-center max-w-2xl">
         ← → se déplacer · ↑ sauter (↑↑ double saut) · ESPACE lancer l'archet (boomerang) · sauter sur les ennemis pour les écraser
+      </div>
+      <div className="w-full max-w-2xl">
+        <iframe
+          title="Bande son"
+          width="100%"
+          height="120"
+          allow="autoplay"
+          scrolling="no"
+          frameBorder="no"
+          src="https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/les-chiens-aboient&color=%23d97706&auto_play=true&hide_related=true&show_comments=false&show_user=true&show_reposts=false&show_teaser=false&visual=false"
+        />
+        <div className="text-amber-100/60 text-xs text-center mt-1">
+          ♪ Bande son : <a className="underline" href="https://soundcloud.com/mathieu-verlot/les-chiens-aboient" target="_blank" rel="noreferrer">Les chiens aboient — Mathieu Verlot</a>
+        </div>
       </div>
     </div>
   );
