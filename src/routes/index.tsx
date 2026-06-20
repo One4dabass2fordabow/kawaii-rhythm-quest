@@ -458,7 +458,14 @@ function Game() {
           }
 
           if (life <= 0) gameState = "lose";
+
+          // Music switch when boss arrives
+          if (musicEnabled) {
+            if (bossObj.alive && score >= 20000) playTrack("boss");
+            else if (!bossObj.alive || score < 20000) playTrack("level");
+          }
         }
+
 
         // ===== RENDER =====
         ctx.clearRect(0,0,W,H);
