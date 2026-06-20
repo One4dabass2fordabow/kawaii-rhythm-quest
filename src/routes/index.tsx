@@ -393,7 +393,7 @@ function Game() {
             }
             if (bossObj.alive && score >= 20000 && collidesRect(hb, {x:bossObj.x+30,y:bossObj.y+20,w:bossObj.w-60,h:bossObj.h-40})) {
               if (bossObj.hitFlash === 0) {
-                bossObj.hp--; bossObj.hitFlash = 20; score += 100;
+                bossObj.hp--; bossObj.hitFlash = 20; score += 100; bossObj.everHit = true;
                 if (bossObj.hp <= 0) { bossObj.alive = false; gameState = "win"; }
               }
               b.returning = true;
