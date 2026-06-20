@@ -399,11 +399,11 @@ function Game() {
             const dy = (player.y + player.h/2) - (e.y + e.h/2);
             const dist = Math.hypot(dx, dy);
             if (e.state === "patrol") {
-              e.y = e.baseY + Math.sin(tick*0.04 + e.x)*8;
+              if (e.isFlying) e.y = e.baseY + Math.sin(tick*0.04 + e.x)*8;
               e.x += e.vx;
               if (e.x < e.patrolMin) e.vx = Math.abs(e.vx);
               if (e.x > e.patrolMax) e.vx = -Math.abs(e.vx);
-              if (dist < 220 && player.y > e.y) {
+              if (e.isFlying && dist < 220 && player.y > e.y) {
                 e.state = "dive";
                 e.vx = Math.sign(dx) * 1.8;
                 e.vy = 2.4;
