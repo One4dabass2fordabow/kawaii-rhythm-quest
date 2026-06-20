@@ -558,64 +558,54 @@ function Game() {
         }
         ctx.restore();
 
-        // Big archet (bow) held in hand + swing animation
-        {
-          const handX = player.x + player.w/2 + (player.facing * 30) - camX;
-          const handY = player.y + 110;
-          // Swing arc angle: from -0.8 to +0.8 over the animation
-          let ang = 0;
-          if (player.swingAnim > 0) {
-            const t = 1 - player.swingAnim / 18; // 0..1
-            ang = -0.9 + t * 1.8;
-          } else {
-            ang = -0.2; // resting tilt
-          }
+        // Swing effect — visual feedback for the bow already in the hero's hand
+        if (player.swingAnim > 0) {
+          const handX = player.x + player.w/2 + (player.facing * 40) - camX;
+          const handY = player.y + 120;
+          const t = 1 - player.swingAnim / 18; // 0..1
+          const ang = -0.9 + t * 1.8;
           ctx.save();
           ctx.translate(handX, handY);
           ctx.rotate(ang * player.facing);
-          // Bow stick (wood)
-          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 6; ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(160 * player.facing, -20); ctx.stroke();
-          // Horse hair (white line)
-          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(156 * player.facing, -16); ctx.stroke();
-          // Tip + frog
-          ctx.fillStyle = "#1a0d04";
-          ctx.beginPath(); ctx.arc(160 * player.facing, -20, 5, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = "#5a2d10";
-          ctx.fillRect(-14, -6, 14, 14);
-          // Swing motion blur
-          if (player.swingAnim > 4 && player.swingAnim < 16) {
-            ctx.strokeStyle = "rgba(255,240,180,0.4)"; ctx.lineWidth = 18;
+          // Whoosh arc
+          ctx.strokeStyle = "rgba(255,240,180,0.55)";
+          ctx.lineWidth = 10;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.arc(0, 0, 70, -0.8, 0.8);
+          ctx.stroke();
+          // Speed lines
+          ctx.strokeStyle = "rgba(255,255,255,0.4)";
+          ctx.lineWidth = 3;
+          for (let i = 0; i < 3; i++) {
+            const r = 55 + i*10;
             ctx.beginPath();
-            ctx.arc(0, 0, 140, -0.6, 0.6);
+            ctx.arc(0, 0, r, -0.4, 0.4);
             ctx.stroke();
           }
           ctx.restore();
         }
 
-        // Bows (thrown boomerang) - BIG spinning archet
+        // Thrown boomerang — small spinning bow (the one from the hero's hand)
         for (const b of bows) {
           const x = b.x - camX;
           ctx.save();
           ctx.translate(x, b.y);
-          ctx.rotate(b.t * 0.45);
+          ctx.rotate(b.t * 0.5);
+          ctx.shadowColor = "#ffd84d"; ctx.shadowBlur = 12;
           // Wood
-          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 8; ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(60, 0); ctx.stroke();
+          ctx.strokeStyle = "#3a1e0a"; ctx.lineWidth = 4; ctx.lineCap = "round";
+          ctx.beginPath(); ctx.moveTo(-28, 0); ctx.lineTo(28, 0); ctx.stroke();
           // Hair
-          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.moveTo(-58, 4); ctx.lineTo(58, 4); ctx.stroke();
+          ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(-26, 2); ctx.lineTo(26, 2); ctx.stroke();
           // Tip/frog
           ctx.fillStyle = "#1a0d04";
-          ctx.beginPath(); ctx.arc(60, 0, 7, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = "#5a2d10"; ctx.fillRect(-66, -8, 16, 16);
-          // Glow trail
-          ctx.shadowColor = "#ffd84d"; ctx.shadowBlur = 18;
-          ctx.strokeStyle = "rgba(255,216,77,0.4)"; ctx.lineWidth = 4;
-          ctx.beginPath(); ctx.moveTo(-55, 0); ctx.lineTo(55, 0); ctx.stroke();
+          ctx.beginPath(); ctx.arc(28, 0, 3.5, 0, Math.PI*2); ctx.fill();
+          ctx.fillStyle = "#5a2d10"; ctx.fillRect(-32, -4, 8, 8);
           ctx.restore();
         }
+
 
         if (bossObj.alive && score >= 20000) {
           ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(W/2-150, 50, 300, 20);
