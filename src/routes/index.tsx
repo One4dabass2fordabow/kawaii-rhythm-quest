@@ -452,8 +452,21 @@ function Game() {
           for (let i = bossProjs.length-1; i>=0; i--) {
             const p = bossProjs[i];
             p.x += p.vx; p.y += p.vy; p.t++;
+            const pbox = {x:p.x-10,y:p.y-10,w:20,h:20};
+            // Melee swing destroys projectiles
+            if (meleeBox && collidesRect(meleeBox, pbox)) {
+              bossProjs.splice(i,1); score += 25; continue;
+            }
+            // Boomerang destroys projectiles
+            let destroyed = false;
+            for (const b of bows) {
+              if (collidesRect({x:b.x-32,y:b.y-12,w:64,h:24}, pbox)) {
+                bossProjs.splice(i,1); score += 25; destroyed = true; break;
+              }
+            }
+            if (destroyed) continue;
             if (p.t > 240 || p.x < 0 || p.x > LEVEL_W || p.y > H+50) bossProjs.splice(i,1);
-            else if (player.invuln === 0 && collidesRect({x:p.x-10,y:p.y-10,w:20,h:20}, {x:player.x+15,y:player.y+10,w:player.w-30,h:player.h-20})) {
+            else if (player.invuln === 0 && collidesRect(pbox, {x:player.x+15,y:player.y+10,w:player.w-30,h:player.h-20})) {
               life--; playBassHit(); player.invuln = 90; bossProjs.splice(i,1);
             }
           }
@@ -635,6 +648,39 @@ function Game() {
           ctx.fillStyle = "#e63946"; ctx.fillRect(W/2-148, 52, 296*(bossObj.hp/10), 16);
           ctx.fillStyle = "#fff"; ctx.font = "bold 14px sans-serif"; ctx.textAlign = "center";
           ctx.fillText("BOSS MÉTRONOME", W/2, 45); ctx.textAlign = "left";
+
+          // Boss approach warning — pulsing banner + arrow pointing right, until boss is on-screen and engaged
+          const bossOnScreen = bossObj.x - camX < W - 60;
+          if (!bossObj.everHit && !bossOnScreen) {
+            const pulse = 0.55 + 0.45*Math.sin(tick*0.18);
+            ctx.save();
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = "#e63946";
+            ctx.fillRect(W/2-180, 80, 360, 38);
+            ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 3;
+            ctx.strokeRect(W/2-180, 80, 360, 38);
+            ctx.fillStyle = "#fff8e0"; ctx.font = "bold 20px serif"; ctx.textAlign = "center";
+            ctx.fillText("⚠ LE BOSS ARRIVE ! ⚠", W/2, 106);
+            ctx.textAlign = "left";
+            ctx.restore();
+
+            // Arrow on the right edge pointing toward the boss
+            ctx.save();
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = "#e63946";
+            ctx.beginPath();
+            ctx.moveTo(W-20, H/2);
+            ctx.lineTo(W-60, H/2-30);
+            ctx.lineTo(W-60, H/2-10);
+            ctx.lineTo(W-90, H/2-10);
+            ctx.lineTo(W-90, H/2+10);
+            ctx.lineTo(W-60, H/2+10);
+            ctx.lineTo(W-60, H/2+30);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = "#fff8e0"; ctx.lineWidth = 2; ctx.stroke();
+            ctx.restore();
+          }
         } else if (score < 20000) {
           ctx.fillStyle = "rgba(255,255,255,0.85)"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "right";
           ctx.fillText(`Boss à 20 000 pts (${20000-score} restants)`, W-12, H-12);
