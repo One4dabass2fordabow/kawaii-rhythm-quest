@@ -39,6 +39,28 @@ const W = 960, H = 540;
 const GRAVITY = 0.7;
 const LEVEL_W = 9600;
 
+// Remove white/near-white background from a sprite (for the level 2 art that has white bg).
+function removeWhiteBg(src: HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  c.width = src.width; c.height = src.height;
+  const cx = c.getContext("2d")!;
+  cx.drawImage(src, 0, 0);
+  const img = cx.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const r = d[i], g = d[i+1], b = d[i+2];
+    const min = Math.min(r,g,b);
+    // Strong white → transparent; near-white → partial alpha for soft edges
+    if (min > 240 && Math.abs(r-g) < 12 && Math.abs(g-b) < 12) {
+      d[i+3] = 0;
+    } else if (min > 215 && Math.abs(r-g) < 18 && Math.abs(g-b) < 18) {
+      d[i+3] = Math.round((255 - min) * 8);
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  return c;
+}
+
 // Recolor an image into a new canvas: replace black-ish pixels and blue-ish (violin body) pixels with target colors.
 function recolorEnemy(src: HTMLImageElement, headColor: [number,number,number], bodyColor: [number,number,number]): HTMLCanvasElement {
   const c = document.createElement("canvas");
